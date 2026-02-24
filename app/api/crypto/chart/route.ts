@@ -1,84 +1,107 @@
 import { NextResponse } from 'next/server';
 
-// CORS 프록시 목록 (묶어서 사용)
-const CORS_PROXIES = [
-  'https://api.allorigins.win/raw?url=',
-  'https://corsproxy.io/?',
-];
+const UPBIT_API = 'https://api.upbit.com/v1';
 
-// Binance API 직접 호출 (Vercel 서버 위치에 따라 다름)
-const BINANCE_API = 'https://api.binance.com/api/v3';
+// 심볼 매핑 (USDT → KRW)
+const SYMBOL_MAP: Record<string, string> = {
+  'BTCUSDT': 'KRW-BTC',
+  'ETHUSDT': 'KRW-ETH',
+  'BNBUSDT': 'KRW-BNB',
+  'SOLUSDT': 'KRW-SOL',
+  'XRPUSDT': 'KRW-XRP',
+  'ADAUSDT': 'KRW-ADA',
+  'DOGEUSDT': 'KRW-DOGE',
+  'AVAXUSDT': 'KRW-AVAX',
+  'DOTUSDT': 'KRW-DOT',
+  'LINKUSDT': 'KRW-LINK',
+  'PEPEUSDT': 'KRW-PEPE',
+  'SHIBUSDT': 'KRW-SHIB',
+};
 
-async function fetchWithProxy(url: string, retries = 2): Promise<Response> {
-  // 먼저 직접 호출 시도
-  try {
-    const directRes = await fetch(url, {
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(5000),
-    });
-    
-    if (directRes.ok && directRes.status !== 451) {
-      return directRes;
-    }
-  } catch (e) {
-    console.log('Direct fetch failed, trying proxy...');
-  }
-  
-  // 프록시로 시도
-  for (const proxy of CORS_PROXIES) {
-    try {
-      const proxyUrl = proxy + encodeURIComponent(url);
-      const res = await fetch(proxyUrl, {
-        headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(10000),
-      });
-      
-      if (res.ok) return res;
-    } catch (e) {
-      console.log(`Proxy failed: ${proxy}`);
-      continue;
-    }
-  }
-  
-  throw new Error('All fetch methods failed');
-}
+// 간격 매핑
+const INTERVAL_MAP: Record<string, string> = {
+  '1m': 'minutes/1',
+  '5m': 'minutes/5',
+  '15m': 'minutes/15',
+  '1h': 'minutes/60',
+  '4h': 'minutes/240',
+  '1d': 'days',
+};
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const symbol = searchParams.get('symbol') || 'BTCUSDT';
   const interval = searchParams.get('interval') || '1h';
-  const limit = parseInt(searchParams.get('limit') || '100');
+  const count = parseInt(searchParams.get('limit') || '100');
+  
+  const upbitSymbol = SYMBOL_MAP[symbol] || 'KRW-BTC';
+  const upbitInterval = INTERVAL_MAP[interval] || 'minutes/60';
   
   try {
-    // Kline 데이터
-    const klinesUrl = `${BINANCE_API}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
-    const klinesRes = await fetchWithProxy(klinesUrl);
-    const klines = await klinesRes.json();
+    // 캔들 데이터
+    const candleUrl = `${UPBIT_API}/candles/${upbitInterval}?market=${upbitSymbol}&count=${count}`;
     
-    // Ticker 데이터
-    const tickerUrl = `${BINANCE_API}/ticker/24hr?symbol=${symbol}`;
-    const tickerRes = await fetchWithProxy(tickerUrl);
-    const ticker = await tickerRes.json();
+    const candleRes = await fetch(candleUrl, {
+      headers: { 
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0'
+      },
+    });
     
-    // 데이터 변환
-    const chartData = klines.map((k: any[]) => ({
-      time: Math.floor(k[0] / 1000),
-      open: parseFloat(k[1]),
-      high: parseFloat(k[2]),
-      low: parseFloat(k[3]),
-      close: parseFloat(k[4]),
-      volume: parseFloat(k[5]),
+    if (!candleRes.ok) {
+      const errorText = await candleRes.text();
+      console.error('Upbit API error:', candleRes.status, errorText);
+      throw new Error(`Upbit API error: ${candleRes.status}`);
+    }
+    
+    const candles = await candleRes.json();
+    
+    // 현재가/24시간 데이터
+    const tickerUrl = `${UPBIT_API}/ticker?markets=${upbitSymbol}`;
+    const tickerRes = await fetch(tickerUrl, {
+      headers: { 
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0'
+      },
+    });
+    
+    let currentPrice = 0;
+    let change24h = 0;
+    let high24h = 0;
+    let low24h = 0;
+    let volume24h = 0;
+    
+    if (tickerRes.ok) {
+      const tickers = await tickerRes.json();
+      const ticker = tickers[0];
+      if (ticker) {
+        currentPrice = ticker.trade_price;
+        change24h = (ticker.signed_change_rate || 0) * 100;
+        high24h = ticker.high_price;
+        low24h = ticker.low_price;
+        volume24h = ticker.acc_trade_volume_24h;
+      }
+    }
+    
+    // 데이터 변환 (업비트는 최신이 앞에 옴 → 역순 정렬)
+    const chartData = candles.reverse().map((c: any) => ({
+      time: Math.floor(new Date(c.candle_date_time_kst).getTime() / 1000),
+      open: c.opening_price,
+      high: c.high_price,
+      low: c.low_price,
+      close: c.trade_price,
+      volume: c.candle_acc_trade_volume,
     }));
     
     return NextResponse.json({
       success: true,
       symbol,
       interval,
-      currentPrice: parseFloat(ticker.lastPrice),
-      change24h: parseFloat(ticker.priceChangePercent),
-      high24h: parseFloat(ticker.highPrice),
-      low24h: parseFloat(ticker.lowPrice),
-      volume24h: parseFloat(ticker.volume),
+      currentPrice,
+      change24h,
+      high24h,
+      low24h,
+      volume24h,
       chartData,
       lastUpdated: new Date().toISOString(),
     });
@@ -86,7 +109,6 @@ export async function GET(request: Request) {
   } catch (error: any) {
     console.error('Chart API error:', error);
     
-    // 폴드백: 더미 데이터
     return NextResponse.json({
       success: false,
       symbol,
