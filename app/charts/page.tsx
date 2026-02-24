@@ -59,7 +59,7 @@ export default function ChartsPage() {
     
     async function loadPrices() {
       try {
-        const res = await fetch('/api/crypto/list?type=top');
+        const res = await fetch('/api/crypto/list/?type=top');
         const json = await res.json();
         if (json.success) {
           const dataMap: Record<string, any> = {};
@@ -246,7 +246,7 @@ function ChartWindow({
         setLoading(true);
         setError(null);
         
-        const res = await fetch(`/api/crypto/chart?symbol=${symbol}&interval=${interval}&limit=100`);
+        const res = await fetch(`/api/crypto/chart/?symbol=${symbol}&interval=${interval}&limit=100`);
         
         if (!res.ok) {
           throw new Error(`HTTP error! status: ${res.status}`);
