@@ -1,73 +1,112 @@
 import { NextResponse } from 'next/server';
 
-const BINANCE_API = 'https://api.binance.com/api/v3';
+const COINGECKO_API = 'https://api.coingecko.com/api/v3';
+
+// 코인 심볼 매핑
+const COIN_MAP: Record<string, string> = {
+  'BTCUSDT': 'bitcoin',
+  'ETHUSDT': 'ethereum',
+  'BNBUSDT': 'binancecoin',
+  'SOLUSDT': 'solana',
+  'XRPUSDT': 'ripple',
+  'ADAUSDT': 'cardano',
+  'DOGEUSDT': 'dogecoin',
+  'AVAXUSDT': 'avalanche-2',
+  'DOTUSDT': 'polkadot',
+  'LINKUSDT': 'chainlink',
+  'PEPEUSDT': 'pepe',
+  'SHIBUSDT': 'shiba-inu',
+};
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const symbol = searchParams.get('symbol') || 'BTCUSDT';
-  const interval = searchParams.get('interval') || '1h';
-  const limit = parseInt(searchParams.get('limit') || '100');
+  const days = searchParams.get('days') || '1';
+  
+  const coinId = COIN_MAP[symbol] || 'bitcoin';
   
   try {
-    console.log(`Fetching chart data: ${symbol}, ${interval}, ${limit}`);
+    // 시장 차트 데이터 가져오기
+    const chartUrl = `${COINGECKO_API}/coins/${coinId}/market_chart?vs_currency=usd&days=${days}`;
     
-    // Kline 데이터 가져오기
-    const klinesUrl = `${BINANCE_API}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
-    console.log('Klines URL:', klinesUrl);
-    
-    const klinesRes = await fetch(klinesUrl, {
+    const chartRes = await fetch(chartUrl, {
       headers: { 'Accept': 'application/json' },
     });
     
-    if (!klinesRes.ok) {
-      const errorText = await klinesRes.text();
-      console.error('Klines API error:', klinesRes.status, errorText);
-      throw new Error(`Klines API error: ${klinesRes.status}`);
+    if (!chartRes.ok) {
+      const errorText = await chartRes.text();
+      console.error('CoinGecko API error:', chartRes.status, errorText);
+      throw new Error(`CoinGecko API error: ${chartRes.status}`);
     }
     
-    const klines = await klinesRes.json();
-    console.log('Klines received:', klines.length);
+    const chartData = await chartRes.json();
     
-    // 24h 티커 데이터
-    const tickerUrl = `${BINANCE_API}/ticker/24hr?symbol=${symbol}`;
-    console.log('Ticker URL:', tickerUrl);
+    // 현재 가격 데이터
+    const priceUrl = `${COINGECKO_API}/simple/price?ids=${coinId}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_24hr_high=true&include_24hr_low=true`;
     
-    const tickerRes = await fetch(tickerUrl, {
+    const priceRes = await fetch(priceUrl, {
       headers: { 'Accept': 'application/json' },
     });
     
-    if (!tickerRes.ok) {
-      const errorText = await tickerRes.text();
-      console.error('Ticker API error:', tickerRes.status, errorText);
-      throw new Error(`Ticker API error: ${tickerRes.status}`);
+    let currentPrice = 0;
+    let change24h = 0;
+    let high24h = 0;
+    let low24h = 0;
+    let volume24h = 0;
+    
+    if (priceRes.ok) {
+      const priceData = await priceRes.json();
+      const coin = priceData[coinId];
+      if (coin) {
+        currentPrice = coin.usd || 0;
+        change24h = coin.usd_24h_change || 0;
+        high24h = coin.usd_24h_high || 0;
+        low24h = coin.usd_24h_low || 0;
+        volume24h = coin.usd_24h_vol || 0;
+      }
     }
     
-    const ticker = await tickerRes.json();
+    // OHLC 데이터 변환 (prices를 기반으로 간단한 캔들 생성)
+    const prices = chartData.prices || [];
+    const volumes = chartData.total_volumes || [];
     
-    // 차트 데이터 변환
-    const chartData = klines.map((k: any[]) => ({
-      time: Math.floor(k[0] / 1000),
-      open: parseFloat(k[1]),
-      high: parseFloat(k[2]),
-      low: parseFloat(k[3]),
-      close: parseFloat(k[4]),
-      volume: parseFloat(k[5]),
-    }));
+    // 1시간 간격으로 샘플링 (CoinGecko는 5분 간격 데이터 제공)
+    const ohlcData = [];
+    const intervalMs = 60 * 60 * 1000; // 1시간
+    
+    for (let i = 0; i < prices.length; i += 12) { // 12개 샘플 = 1시간
+      const chunk = prices.slice(i, i + 12);
+      if (chunk.length === 0) continue;
+      
+      const open = chunk[0][1];
+      const close = chunk[chunk.length - 1][1];
+      const high = Math.max(...chunk.map((p: any) => p[1]));
+      const low = Math.min(...chunk.map((p: any) => p[1]));
+      const time = Math.floor(chunk[0][0] / 1000);
+      
+      ohlcData.push({
+        time,
+        open,
+        high,
+        low,
+        close,
+        volume: volumes[i] ? volumes[i][1] : 0,
+      });
+    }
     
     const response = {
       success: true,
       symbol,
-      interval,
-      currentPrice: parseFloat(ticker.lastPrice),
-      change24h: parseFloat(ticker.priceChangePercent),
-      high24h: parseFloat(ticker.highPrice),
-      low24h: parseFloat(ticker.lowPrice),
-      volume24h: parseFloat(ticker.volume),
-      chartData,
+      interval: days + 'd',
+      currentPrice,
+      change24h,
+      high24h,
+      low24h,
+      volume24h,
+      chartData: ohlcData,
       lastUpdated: new Date().toISOString(),
     };
     
-    console.log('Response prepared successfully');
     return NextResponse.json(response);
     
   } catch (error: any) {
@@ -76,7 +115,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       success: false,
       symbol,
-      interval,
+      interval: days + 'd',
       currentPrice: 0,
       change24h: 0,
       high24h: 0,
@@ -85,6 +124,6 @@ export async function GET(request: Request) {
       chartData: [],
       lastUpdated: new Date().toISOString(),
       error: error.message || 'Failed to fetch chart data',
-    }, { status: 200 }); // 200으로 반환하여 클라이언트에서 처리
+    }, { status: 200 });
   }
 }
