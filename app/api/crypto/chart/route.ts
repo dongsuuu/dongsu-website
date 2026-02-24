@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server';
 
 const BINANCE_API = 'https://api.binance.com/api/v3';
 
-export const runtime = 'edge';
-
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const symbol = searchParams.get('symbol') || 'BTCUSDT';
@@ -11,24 +9,36 @@ export async function GET(request: Request) {
   const limit = parseInt(searchParams.get('limit') || '100');
   
   try {
+    console.log(`Fetching chart data: ${symbol}, ${interval}, ${limit}`);
+    
     // Kline 데이터 가져오기
-    const klinesRes = await fetch(
-      `${BINANCE_API}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`,
-      { cache: 'no-store' }
-    );
+    const klinesUrl = `${BINANCE_API}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+    console.log('Klines URL:', klinesUrl);
+    
+    const klinesRes = await fetch(klinesUrl, {
+      headers: { 'Accept': 'application/json' },
+    });
     
     if (!klinesRes.ok) {
+      const errorText = await klinesRes.text();
+      console.error('Klines API error:', klinesRes.status, errorText);
       throw new Error(`Klines API error: ${klinesRes.status}`);
     }
     
     const klines = await klinesRes.json();
+    console.log('Klines received:', klines.length);
     
     // 24h 티커 데이터
-    const tickerRes = await fetch(`${BINANCE_API}/ticker/24hr?symbol=${symbol}`, {
-      cache: 'no-store'
+    const tickerUrl = `${BINANCE_API}/ticker/24hr?symbol=${symbol}`;
+    console.log('Ticker URL:', tickerUrl);
+    
+    const tickerRes = await fetch(tickerUrl, {
+      headers: { 'Accept': 'application/json' },
     });
     
     if (!tickerRes.ok) {
+      const errorText = await tickerRes.text();
+      console.error('Ticker API error:', tickerRes.status, errorText);
       throw new Error(`Ticker API error: ${tickerRes.status}`);
     }
     
@@ -44,7 +54,7 @@ export async function GET(request: Request) {
       volume: parseFloat(k[5]),
     }));
     
-    return NextResponse.json({
+    const response = {
       success: true,
       symbol,
       interval,
@@ -55,7 +65,11 @@ export async function GET(request: Request) {
       volume24h: parseFloat(ticker.volume),
       chartData,
       lastUpdated: new Date().toISOString(),
-    });
+    };
+    
+    console.log('Response prepared successfully');
+    return NextResponse.json(response);
+    
   } catch (error: any) {
     console.error('Chart API error:', error);
     
@@ -71,6 +85,6 @@ export async function GET(request: Request) {
       chartData: [],
       lastUpdated: new Date().toISOString(),
       error: error.message || 'Failed to fetch chart data',
-    }, { status: 500 });
+    }, { status: 200 }); // 200으로 반환하여 클라이언트에서 처리
   }
 }
