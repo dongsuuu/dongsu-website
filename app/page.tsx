@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Agent, Service } from '@/lib/types';
 import { fallbackAgents } from '@/lib/fallbackData';
+import CryptoChart from '@/components/CryptoChart';
 
 async function getAgents(): Promise<Agent[]> {
   try {
@@ -163,6 +164,19 @@ export default async function Home() {
             <div className="text-4xl font-bold text-blue-400 mb-2">{mainAgent?.stats.successRate || 95}%</div>
             <div className="text-slate-400">Success Rate</div>
           </div>
+        </div>
+      </section>
+
+      {/* Crypto Charts */}
+      <section className="container mx-auto px-4 py-16">
+        <h2 className="text-3xl font-bold text-center mb-4">Live Crypto Charts</h2>
+        <p className="text-slate-400 text-center mb-12 max-w-2xl mx-auto">
+          Real-time price data powered by CoinGecko. Updates every 30 seconds.
+        </p>
+        
+        <div className="grid md:grid-cols-2 gap-6">
+          <CryptoChart coinId="bitcoin" days="1" height={280} />
+          <CryptoChart coinId="ethereum" days="1" height={280} />
         </div>
       </section>
 
