@@ -9,9 +9,10 @@ import { getCoinbaseProductId } from '@/lib/constants/symbols';
 interface TVChartProps {
   symbol: string;
   isMain: boolean;
+  onDataChange?: (data: any[]) => void;
 }
 
-export function TVChart({ symbol, isMain }: TVChartProps) {
+export function TVChart({ symbol, isMain, onDataChange }: TVChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<any>(null);
   const seriesRefs = useRef<{
