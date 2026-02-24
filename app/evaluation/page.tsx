@@ -33,26 +33,26 @@ export default async function EvaluationPage() {
 
         {/* Evaluations List */}
         <div className="space-y-6">
-          {evaluations.map((eval) => (
+          {evaluations.map((evaluation) => (
             <div
-              key={eval.agentSlug}
+              key={evaluation.agentSlug}
               className="p-6 bg-slate-800/50 border border-slate-700 rounded-xl"
             >
               {/* Header */}
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
                 <div>
                   <div className="text-sm text-slate-400 mb-1">
-                    Evaluated on {new Date(eval.updatedAt).toLocaleDateString()}
+                    Evaluated on {new Date(evaluation.updatedAt).toLocaleDateString()}
                   </div>
-                  <h2 className="text-2xl font-bold">@{eval.agentName}</h2>
+                  <h2 className="text-2xl font-bold">@{evaluation.agentName}</h2>
                 </div>
                 
                 <div className="flex items-center gap-4">
-                  <div className={`px-4 py-2 rounded-lg font-bold text-lg ${getGradeColor(eval.grade)}`}>
-                    Grade {eval.grade}
+                  <div className={`px-4 py-2 rounded-lg font-bold text-lg ${getGradeColor(evaluation.grade)}`}>
+                    Grade {evaluation.grade}
                   </div>
-                  <div className={`text-3xl font-bold ${getScoreColor(eval.score)}`}>
-                    {eval.score}
+                  <div className={`text-3xl font-bold ${getScoreColor(evaluation.score)}`}>
+                    {evaluation.score}
                   </div>
                 </div>
               </div>
@@ -62,14 +62,14 @@ export default async function EvaluationPage() {
                 <div>
                   <div className="flex justify-between text-sm mb-2">
                     <span className="text-slate-300">Usage Score</span>
-                    <span className={eval.breakdown.usage < 50 ? 'text-red-400' : eval.breakdown.usage < 70 ? 'text-yellow-400' : 'text-green-400'}>
-                      {eval.breakdown.usage}/100
+                    <span className={evaluation.breakdown.usage < 50 ? 'text-red-400' : evaluation.breakdown.usage < 70 ? 'text-yellow-400' : 'text-green-400'}>
+                      {evaluation.breakdown.usage}/100
                     </span>
                   </div>
                   <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
                     <div 
-                      className={`h-full rounded-full ${eval.breakdown.usage < 50 ? 'bg-red-500' : eval.breakdown.usage < 70 ? 'bg-yellow-500' : 'bg-green-500'}`}
-                      style={{ width: `${eval.breakdown.usage}%` }}
+                      className={`h-full rounded-full ${evaluation.breakdown.usage < 50 ? 'bg-red-500' : evaluation.breakdown.usage < 70 ? 'bg-yellow-500' : 'bg-green-500'}`}
+                      style={{ width: `${evaluation.breakdown.usage}%` }}
                     />
                   </div>
                 </div>
@@ -77,14 +77,14 @@ export default async function EvaluationPage() {
                 <div>
                   <div className="flex justify-between text-sm mb-2">
                     <span className="text-slate-300">Performance Score</span>
-                    <span className={eval.breakdown.performance >= 80 ? 'text-green-400' : 'text-yellow-400'}>
-                      {eval.breakdown.performance}/100
+                    <span className={evaluation.breakdown.performance >= 80 ? 'text-green-400' : 'text-yellow-400'}>
+                      {evaluation.breakdown.performance}/100
                     </span>
                   </div>
                   <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
                     <div 
-                      className={`h-full rounded-full ${eval.breakdown.performance >= 80 ? 'bg-green-500' : 'bg-yellow-500'}`}
-                      style={{ width: `${eval.breakdown.performance}%` }}
+                      className={`h-full rounded-full ${evaluation.breakdown.performance >= 80 ? 'bg-green-500' : 'bg-yellow-500'}`}
+                      style={{ width: `${evaluation.breakdown.performance}%` }}
                     />
                   </div>
                 </div>
@@ -92,14 +92,14 @@ export default async function EvaluationPage() {
                 <div>
                   <div className="flex justify-between text-sm mb-2">
                     <span className="text-slate-300">Reliability Score</span>
-                    <span className={eval.breakdown.reliability < 50 ? 'text-red-400' : eval.breakdown.reliability < 70 ? 'text-yellow-400' : 'text-green-400'}>
-                      {eval.breakdown.reliability}/100
+                    <span className={evaluation.breakdown.reliability < 50 ? 'text-red-400' : evaluation.breakdown.reliability < 70 ? 'text-yellow-400' : 'text-green-400'}>
+                      {evaluation.breakdown.reliability}/100
                     </span>
                   </div>
                   <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
                     <div 
-                      className={`h-full rounded-full ${eval.breakdown.reliability < 50 ? 'bg-red-500' : eval.breakdown.reliability < 70 ? 'bg-yellow-500' : 'bg-green-500'}`}
-                      style={{ width: `${eval.breakdown.reliability}%` }}
+                      className={`h-full rounded-full ${evaluation.breakdown.reliability < 50 ? 'bg-red-500' : evaluation.breakdown.reliability < 70 ? 'bg-yellow-500' : 'bg-green-500'}`}
+                      style={{ width: `${evaluation.breakdown.reliability}%` }}
                     />
                   </div>
                 </div>
@@ -107,14 +107,14 @@ export default async function EvaluationPage() {
                 <div>
                   <div className="flex justify-between text-sm mb-2">
                     <span className="text-slate-300">Truth Score</span>
-                    <span className={eval.breakdown.truth >= 80 ? 'text-green-400' : eval.breakdown.truth >= 60 ? 'text-yellow-400' : 'text-red-400'}>
-                      {eval.breakdown.truth}/100
+                    <span className={evaluation.breakdown.truth >= 80 ? 'text-green-400' : evaluation.breakdown.truth >= 60 ? 'text-yellow-400' : 'text-red-400'}>
+                      {evaluation.breakdown.truth}/100
                     </span>
                   </div>
                   <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
                     <div 
-                      className={`h-full rounded-full ${eval.breakdown.truth >= 80 ? 'bg-green-500' : eval.breakdown.truth >= 60 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                      style={{ width: `${eval.breakdown.truth}%` }}
+                      className={`h-full rounded-full ${evaluation.breakdown.truth >= 80 ? 'bg-green-500' : evaluation.breakdown.truth >= 60 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                      style={{ width: `${evaluation.breakdown.truth}%` }}
                     />
                   </div>
                 </div>
@@ -123,34 +123,34 @@ export default async function EvaluationPage() {
               {/* Summary */}
               <div className="p-4 bg-slate-900/50 rounded-lg">
                 <h3 className="font-semibold mb-2">Analysis</h3>
-                <p className="text-slate-300">{eval.summary}</p>
+                <p className="text-slate-300">{evaluation.summary}</p>
               </div>
 
               {/* Details */}
-              {eval.details && (
+              {evaluation.details && (
                 <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  {eval.details.uniqueBuyers && (
+                  {evaluation.details.uniqueBuyers && (
                     <div>
                       <span className="text-slate-400">Buyers: </span>
-                      <span>{eval.details.uniqueBuyers}</span>
+                      <span>{evaluation.details.uniqueBuyers}</span>
                     </div>
                   )}
-                  {eval.details.txCount && (
+                  {evaluation.details.txCount && (
                     <div>
                       <span className="text-slate-400">Transactions: </span>
-                      <span>{eval.details.txCount}</span>
+                      <span>{evaluation.details.txCount}</span>
                     </div>
                   )}
-                  {eval.details.retentionRate && (
+                  {evaluation.details.retentionRate && (
                     <div>
                       <span className="text-slate-400">Retention: </span>
-                      <span>{eval.details.retentionRate}</span>
+                      <span>{evaluation.details.retentionRate}</span>
                     </div>
                   )}
-                  {eval.details.factAccuracy && (
+                  {evaluation.details.factAccuracy && (
                     <div>
                       <span className="text-slate-400">Accuracy: </span>
-                      <span>{eval.details.factAccuracy}</span>
+                      <span>{evaluation.details.factAccuracy}</span>
                     </div>
                   )}
                 </div>
