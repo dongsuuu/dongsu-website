@@ -1,10 +1,27 @@
-import CryptoChartAdvanced from '@/components/CryptoChartAdvanced';
 import { Metadata } from 'next';
+import dynamic from 'next/dynamic';
 
 export const metadata: Metadata = {
   title: 'Crypto Charts | dongsu',
   description: 'Real-time cryptocurrency charts with live data from Binance',
 };
+
+// 클라이언트 전용 로딩
+const CryptoChartAdvanced = dynamic(
+  () => import('@/components/CryptoChartAdvanced'),
+  { 
+    ssr: false,
+    loading: () => (
+      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 h-[480px]">
+        <div className="animate-pulse space-y-4">
+          <div className="h-8 bg-slate-700 rounded w-1/4"></div>
+          <div className="h-8 bg-slate-700 rounded w-full"></div>
+          <div className="h-64 bg-slate-700 rounded"></div>
+        </div>
+      </div>
+    )
+  }
+);
 
 // TOP 10 코인
 const TOP_COINS = [

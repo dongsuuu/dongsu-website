@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { createChart, CandlestickSeries, AreaSeries, ColorType, Time } from 'lightweight-charts';
 
 interface ChartData {
   time: number;
@@ -33,13 +32,23 @@ export default function CryptoChartAdvanced({
   defaultInterval = '1h'
 }: CryptoChartAdvancedProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<any>(null);
+  const seriesRef = useRef<any>(null);
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [interval, setInterval] = useState(defaultInterval);
   const [chartType, setChartType] = useState<'candle' | 'area'>('candle');
+  const [isClient, setIsClient] = useState(false);
+
+  // 클라이언트 확인
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   // 데이터 가져오기
   useEffect(() => {
+    if (!isClient) return;
+    
     let isMounted = true;
     
     async function loadChartData() {
@@ -62,103 +71,134 @@ export default function CryptoChartAdvanced({
     
     return () => {
       isMounted = false;
-      clearInterval(timer);
+      window.clearInterval(timer);
     };
-  }, [symbol, interval]);
+  }, [symbol, interval, isClient]);
 
   // 차트 렌더링
   useEffect(() => {
-    if (!chartContainerRef.current || !data?.chartData?.length) return;
+    if (!isClient || !chartContainerRef.current || !data?.chartData?.length) return;
 
-    const chart = createChart(chartContainerRef.current, {
-      layout: {
-        background: { type: ColorType.Solid, color: 'transparent' },
-        textColor: '#94a3b8',
-      },
-      grid: {
-        vertLines: { color: 'rgba(148, 163, 184, 0.1)' },
-        horzLines: { color: 'rgba(148, 163, 184, 0.1)' },
-      },
-      rightPriceScale: {
-        borderColor: 'rgba(148, 163, 184, 0.2)',
-      },
-      timeScale: {
-        borderColor: 'rgba(148, 163, 184, 0.2)',
-        timeVisible: true,
-        secondsVisible: false,
-      },
-      crosshair: {
-        mode: 1,
-        vertLine: {
-          color: '#3b82f6',
-          labelBackgroundColor: '#3b82f6',
-        },
-        horzLine: {
-          color: '#3b82f6',
-          labelBackgroundColor: '#3b82f6',
-        },
-      },
-      handleScroll: {
-        vertTouchDrag: false,
-      },
-      width: chartContainerRef.current.clientWidth,
-      height: height,
-    });
+    let chart: any;
+    let series: any;
 
-    let series;
-    
-    if (chartType === 'candle') {
-      series = chart.addSeries(CandlestickSeries, {
-        upColor: '#22c55e',
-        downColor: '#ef4444',
-        borderUpColor: '#22c55e',
-        borderDownColor: '#ef4444',
-        wickUpColor: '#22c55e',
-        wickDownColor: '#ef4444',
-      });
-      
-      const candleData = data.chartData.map((item: ChartData) => ({
-        time: item.time as Time,
-        open: item.open,
-        high: item.high,
-        low: item.low,
-        close: item.close,
-      }));
-      
-      series.setData(candleData);
-    } else {
-      series = chart.addSeries(AreaSeries, {
-        lineColor: '#3b82f6',
-        topColor: 'rgba(59, 130, 246, 0.4)',
-        bottomColor: 'rgba(59, 130, 246, 0.05)',
-        lineWidth: 2,
-      });
-      
-      const areaData = data.chartData.map((item: ChartData) => ({
-        time: item.time as Time,
-        value: item.close,
-      }));
-      
-      series.setData(areaData);
-    }
-
-    chart.timeScale().fitContent();
-
-    const handleResize = () => {
-      if (chartContainerRef.current) {
-        chart.applyOptions({
-          width: chartContainerRef.current.clientWidth,
+    const initChart = async () => {
+      try {
+        const { createChart, CandlestickSeries, AreaSeries, ColorType } = await import('lightweight-charts');
+        
+        chart = createChart(chartContainerRef.current!, {
+          layout: {
+            background: { type: ColorType.Solid, color: 'transparent' },
+            textColor: '#94a3b8',
+          },
+          grid: {
+            vertLines: { color: 'rgba(148, 163, 184, 0.1)' },
+            horzLines: { color: 'rgba(148, 163, 184, 0.1)' },
+          },
+          rightPriceScale: {
+            borderColor: 'rgba(148, 163, 184, 0.2)',
+          },
+          timeScale: {
+            borderColor: 'rgba(148, 163, 184, 0.2)',
+            timeVisible: true,
+            secondsVisible: false,
+          },
+          crosshair: {
+            mode: 1,
+            vertLine: {
+              color: '#3b82f6',
+              labelBackgroundColor: '#3b82f6',
+            },
+            horzLine: {
+              color: '#3b82f6',
+              labelBackgroundColor: '#3b82f6',
+            },
+          },
+          handleScroll: {
+            vertTouchDrag: false,
+          },
+          width: chartContainerRef.current!.clientWidth,
+          height: height,
         });
+
+        chartRef.current = chart;
+
+        if (chartType === 'candle') {
+          series = chart.addSeries(CandlestickSeries, {
+            upColor: '#22c55e',
+            downColor: '#ef4444',
+            borderUpColor: '#22c55e',
+            borderDownColor: '#ef4444',
+            wickUpColor: '#22c55e',
+            wickDownColor: '#ef4444',
+          });
+          
+          const candleData = data.chartData.map((item: ChartData) => ({
+            time: item.time,
+            open: item.open,
+            high: item.high,
+            low: item.low,
+            close: item.close,
+          }));
+          
+          series.setData(candleData);
+        } else {
+          series = chart.addSeries(AreaSeries, {
+            lineColor: '#3b82f6',
+            topColor: 'rgba(59, 130, 246, 0.4)',
+            bottomColor: 'rgba(59, 130, 246, 0.05)',
+            lineWidth: 2,
+          });
+          
+          const areaData = data.chartData.map((item: ChartData) => ({
+            time: item.time,
+            value: item.close,
+          }));
+          
+          series.setData(areaData);
+        }
+
+        seriesRef.current = series;
+        chart.timeScale().fitContent();
+
+        const handleResize = () => {
+          if (chartContainerRef.current && chart) {
+            chart.applyOptions({
+              width: chartContainerRef.current.clientWidth,
+            });
+          }
+        };
+
+        window.addEventListener('resize', handleResize);
+
+        return () => {
+          window.removeEventListener('resize', handleResize);
+        };
+      } catch (err) {
+        console.error('Chart init error:', err);
       }
     };
 
-    window.addEventListener('resize', handleResize);
+    const cleanup = initChart();
 
     return () => {
-      window.removeEventListener('resize', handleResize);
-      chart.remove();
+      if (chartRef.current) {
+        chartRef.current.remove();
+        chartRef.current = null;
+      }
     };
-  }, [data, height, chartType]);
+  }, [data, height, chartType, isClient]);
+
+  if (!isClient) {
+    return (
+      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6" style={{ height: height + 80 }}>
+        <div className="animate-pulse space-y-4">
+          <div className="h-8 bg-slate-700 rounded w-1/4"></div>
+          <div className="h-64 bg-slate-700 rounded"></div>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -237,15 +277,15 @@ export default function CryptoChartAdvanced({
       <div className="grid grid-cols-3 gap-4 mb-4 text-sm">
         <div className="bg-slate-700/50 rounded-lg p-3">
           <div className="text-slate-400 mb-1">고가 (24h)</div>
-          <div className="font-semibold text-green-400">${data.high24h.toLocaleString()}</div>
+          <div className="font-semibold text-green-400">${data.high24h?.toLocaleString() || '-'}</div>
         </div>
         <div className="bg-slate-700/50 rounded-lg p-3">
           <div className="text-slate-400 mb-1">저가 (24h)</div>
-          <div className="font-semibold text-red-400">${data.low24h.toLocaleString()}</div>
+          <div className="font-semibold text-red-400">${data.low24h?.toLocaleString() || '-'}</div>
         </div>
         <div className="bg-slate-700/50 rounded-lg p-3">
           <div className="text-slate-400 mb-1">거래량 (24h)</div>
-          <div className="font-semibold">${(data.volume24h / 1000000).toFixed(2)}M</div>
+          <div className="font-semibold">${data.volume24h ? (data.volume24h / 1000000).toFixed(2) + 'M' : '-'}</div>
         </div>
       </div>
 
