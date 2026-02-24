@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createChart, CandlestickSeries, AreaSeries, ColorType, Time } from 'lightweight-charts';
 
 interface ChartData {
@@ -37,25 +37,34 @@ export default function CryptoChartAdvanced({
   const [loading, setLoading] = useState(true);
   const [interval, setInterval] = useState(defaultInterval);
   const [chartType, setChartType] = useState<'candle' | 'area'>('candle');
-  
-  const fetchData = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/crypto/chart?symbol=${symbol}&interval=${interval}`);
-      const json = await res.json();
-      setData(json);
-    } catch (err) {
-      console.error('Failed to fetch chart:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [symbol, interval]);
 
-  // 초기 로드 및 폧링
+  // 데이터 가져오기
   useEffect(() => {
-    fetchData();
-    const pollInterval = setInterval(fetchData, 10000); // 10초 폧링
-    return () => clearInterval(pollInterval);
-  }, [fetchData]);
+    let isMounted = true;
+    
+    async function loadChartData() {
+      try {
+        const res = await fetch(`/api/crypto/chart?symbol=${symbol}&interval=${interval}`);
+        const json = await res.json();
+        if (isMounted) {
+          setData(json);
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error('Failed to fetch chart:', err);
+        if (isMounted) setLoading(false);
+      }
+    }
+
+    loadChartData();
+    
+    const timer = window.setInterval(loadChartData, 10000);
+    
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
+  }, [symbol, interval]);
 
   // 차트 렌더링
   useEffect(() => {
