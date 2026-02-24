@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { createChart, IChartApi, ISeriesApi, AreaData, Time } from 'lightweight-charts';
+import { createChart, AreaSeries, ColorType, Time } from 'lightweight-charts';
 
 interface ChartData {
   time: number;
@@ -34,12 +34,9 @@ export default function CryptoChart({
   height = 300 
 }: CryptoChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<'Area'> | null>(null);
   const [data, setData] = useState<CoinData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // 데이터 가져오기
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -54,17 +51,16 @@ export default function CryptoChart({
     };
 
     fetchData();
-    const interval = setInterval(fetchData, 30000); // 30초 업데이트
+    const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
   }, [coinId, days]);
 
-  // 차트 초기화
   useEffect(() => {
     if (!chartContainerRef.current || !data?.chartData?.length) return;
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { color: 'transparent' },
+        background: { type: ColorType.Solid, color: 'transparent' },
         textColor: '#94a3b8',
       },
       grid: {
@@ -92,20 +88,19 @@ export default function CryptoChart({
       handleScroll: {
         vertTouchDrag: false,
       },
+      width: chartContainerRef.current.clientWidth,
+      height: height,
     });
 
-    chartRef.current = chart;
-
-    const series = chart.addAreaSeries({
+    const series = chart.addSeries(AreaSeries, {
       lineColor: data.coin.color || '#3b82f6',
       topColor: data.coin.color ? `${data.coin.color}40` : 'rgba(59, 130, 246, 0.4)',
       bottomColor: data.coin.color ? `${data.coin.color}05` : 'rgba(59, 130, 246, 0.05)',
       lineWidth: 2,
     });
 
-    seriesRef.current = series;
-
-    const formattedData: AreaData<Time>[] = data.chartData.map((item) => ({
+    // 타입 변환
+    const formattedData = data.chartData.map((item) => ({
       time: item.time as Time,
       value: item.value,
     }));
@@ -117,12 +112,10 @@ export default function CryptoChart({
       if (chartContainerRef.current) {
         chart.applyOptions({
           width: chartContainerRef.current.clientWidth,
-          height: height,
         });
       }
     };
 
-    handleResize();
     window.addEventListener('resize', handleResize);
 
     return () => {
@@ -157,7 +150,6 @@ export default function CryptoChart({
 
   return (
     <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-      {/* 헤더 */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <div 
@@ -181,10 +173,8 @@ export default function CryptoChart({
         </div>
       </div>
 
-      {/* 차트 */}
       <div ref={chartContainerRef} style={{ height }} />
 
-      {/* 푸터 */}
       <div className="flex items-center justify-between mt-4 text-xs text-slate-500">
         <span>Powered by CoinGecko</span>
         <span>Updated: {new Date(data.lastUpdated).toLocaleTimeString()}</span>
