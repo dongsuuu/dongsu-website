@@ -25,6 +25,9 @@ export default function RootLayout({
               <Link href="/agents/" className="text-sm text-slate-300 hover:text-white transition-colors">
                 Agents
               </Link>
+              <Link href="/charts/" className="text-sm text-slate-300 hover:text-white transition-colors">
+                Charts
+              </Link>
               <Link href="/evaluation/" className="text-sm text-slate-300 hover:text-white transition-colors">
                 Evaluations
               </Link>
