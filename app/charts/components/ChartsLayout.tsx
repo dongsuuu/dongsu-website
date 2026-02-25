@@ -1,39 +1,25 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
-import { useChartStore } from '@/lib/store/chartStore';
-import { useCoinbaseWebSocket } from '@/hooks/useCoinbaseWebSocket';
-import { MarketPanel } from './MarketPanel';
-import { ChartArea } from './ChartArea';
+import { useEffect, useState } from 'react';
+import { useChartCoreStore } from '@/lib/store/chartCoreStore';
+import { TVChart } from './ChartArea/TVChart';
 import { TopBar } from './TopBar';
+import { MarketPanel } from './MarketPanel';
 
 export function ChartsLayout() {
   const [isMounted, setIsMounted] = useState(false);
-  const { selectedCoin, isDualMode, secondCoin, favorites } = useChartStore();
+  const { 
+    mode, 
+    leftSymbol, 
+    leftResolution, 
+    rightSymbol, 
+    rightResolution 
+  } = useChartCoreStore();
   
-  // 마운트 확인
   useEffect(() => {
     setIsMounted(true);
   }, []);
   
-  // WebSocket 연결할 심볼 목록 - useMemo로 안정화
-  const wsSymbols = useMemo(() => {
-    const symbols = [selectedCoin.symbol];
-    if (isDualMode && secondCoin) {
-      symbols.push(secondCoin.symbol);
-    }
-    favorites.forEach((fav) => {
-      if (!symbols.includes(fav)) {
-        symbols.push(fav);
-      }
-    });
-    return symbols;
-  }, [selectedCoin.symbol, isDualMode, secondCoin, favorites]);
-  
-  // WebSocket 연결 (마운트 후에만)
-  useCoinbaseWebSocket(isMounted ? wsSymbols : []);
-  
-  // 마운트 전 로딩
   if (!isMounted) {
     return (
       <div className="h-screen flex items-center justify-center bg-[#0D1117] text-[#E6EDF3]">
@@ -48,9 +34,40 @@ export function ChartsLayout() {
   return (
     <div className="h-screen flex flex-col bg-[#0D1117] text-[#E6EDF3]">
       <TopBar />
+      
       <div className="flex-1 flex overflow-hidden">
+        {/* 좌측: 종목 리스트 */}
         <MarketPanel />
-        <ChartArea />
+        
+        {/* 우측: 차트 영역 */}
+        <div className="flex-1 flex flex-col">
+          {mode === 'single' ? (
+            // Single 모드
+            <TVChart 
+              chartId="left"
+              symbol={leftSymbol}
+              resolution={leftResolution}
+            />
+          ) : (
+            // Dual 모드
+            <>
+              <div className="h-1/2 border-b border-[#30363D]">
+                <TVChart 
+                  chartId="left"
+                  symbol={leftSymbol}
+                  resolution={leftResolution}
+                />
+              </div>
+              <div className="h-1/2">
+                <TVChart 
+                  chartId="right"
+                  symbol={rightSymbol}
+                  resolution={rightResolution}
+                />
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
