@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useChartData, CandleData } from '@/hooks/useChartData';
+import { useLivePrices } from '@/hooks/useLivePrices';
 import { TradingChart } from './components/TradingChart';
 import { COINS } from '@/lib/constants/symbols';
 import { normalizeSymbol } from '@/lib/utils/chartUtils';
@@ -29,15 +30,21 @@ export default function ChartPage() {
   const [symbol, setSymbol] = useState('BTC');
   const [resolution, setResolution] = useState('1h');
   const [hoverData, setHoverData] = useState<CandleData | null>(null);
-  const [marketStats, setMarketStats] = useState<MarketStats | null>(null);
+  const [marketStats, setMarketStats] = useState<Record<string, MarketStats>>({});
   
   const { data, isLoading, isLoadingMore, error, hasMore, loadMore } = useChartData(symbol, resolution);
   
-  // 24h stats 로드
+  // 모든 코인 심볼
+  const allSymbols = useMemo(() => COINS.map((c) => c.symbol), []);
+  
+  // 실시간 가격 (WebSocket)
+  const livePrices = useLivePrices(allSymbols);
+  
+  // 24h stats 로드 (초기)
   useEffect(() => {
-    const fetchStats = async () => {
+    const fetchStats = async (sym: string) => {
       try {
-        const productId = normalizeSymbol(symbol);
+        const productId = normalizeSymbol(sym);
         const res = await fetch(`https://api.exchange.coinbase.com/products/${productId}/stats`, {
           headers: { 'User-Agent': 'dongsu-pro-chart/1.0' },
         });
@@ -47,25 +54,50 @@ export default function ChartPage() {
         const last = parseFloat(d.last);
         const open = parseFloat(d.open);
         
-        setMarketStats({
-          lastPrice: last,
-          change24hPct: ((last - open) / open) * 100,
-          high24h: parseFloat(d.high),
-          low24h: parseFloat(d.low),
-          volume24h: parseFloat(d.volume),
-        });
+        setMarketStats((prev) => ({
+          ...prev,
+          [sym]: {
+            lastPrice: last,
+            change24hPct: ((last - open) / open) * 100,
+            high24h: parseFloat(d.high),
+            low24h: parseFloat(d.low),
+            volume24h: parseFloat(d.volume),
+          },
+        }));
       } catch (err) {
         console.error('Stats fetch error:', err);
       }
     };
     
-    fetchStats();
-    const interval = setInterval(fetchStats, 30000);
+    // 초기 로드
+    allSymbols.forEach((sym) => fetchStats(sym));
+    
+    // 30초마다 갱신
+    const interval = setInterval(() => {
+      allSymbols.forEach((sym) => fetchStats(sym));
+    }, 30000);
+    
     return () => clearInterval(interval);
-  }, [symbol]);
+  }, [allSymbols]);
+  
+  // 실시간 가격으로 marketStats 업데이트
+  useEffect(() => {
+    Object.entries(livePrices).forEach(([sym, data]) => {
+      setMarketStats((prev) => ({
+        ...prev,
+        [sym]: {
+          ...(prev[sym] || {}),
+          lastPrice: data.price,
+          change24hPct: data.change24hPct,
+          volume24h: data.volume24h,
+        },
+      }));
+    });
+  }, [livePrices]);
   
   const displayData = hoverData || (data.length > 0 ? data[data.length - 1] : null);
-  const isUp = (marketStats?.change24hPct || 0) >= 0;
+  const currentStats = marketStats[symbol];
+  const isUp = (currentStats?.change24hPct || 0) >= 0;
   
   const formatPrice = (p?: number) => {
     if (p == null || isNaN(p)) return '-';
@@ -82,7 +114,7 @@ export default function ChartPage() {
   
   return (
     <div className="h-screen flex flex-col bg-[#0D1117] text-[#E6EDF3] overflow-hidden">
-      {/* 상단 헤더 - 업비트 스타일 */}
+      {/* 상단 헤더 */}
       <header className="h-14 bg-[#161B22] border-b border-[#30363D] flex items-center px-4 gap-4 shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-xl font-bold">{symbol}</span>
@@ -91,11 +123,11 @@ export default function ChartPage() {
         
         <div className="flex items-baseline gap-3">
           <span className={`text-2xl font-bold ${isUp ? 'text-[#E15241]' : 'text-[#2988D9]'}`}>
-            {formatPrice(marketStats?.lastPrice)}
+            {formatPrice(currentStats?.lastPrice)}
           </span>
           <span className={`text-base ${isUp ? 'text-[#E15241]' : 'text-[#2988D9]'}`}>
-            {(marketStats?.change24hPct ?? 0) >= 0 ? '+' : ''}
-            {marketStats?.change24hPct?.toFixed(2) ?? '-'}%
+            {(currentStats?.change24hPct ?? 0) >= 0 ? '+' : ''}
+            {currentStats?.change24hPct?.toFixed(2) ?? '-'}%
           </span>
         </div>
         
@@ -104,24 +136,24 @@ export default function ChartPage() {
         <div className="flex items-center gap-6 text-sm">
           <div className="flex flex-col items-end">
             <span className="text-xs text-[#6E7681]">고가</span>
-            <span className="text-[#E15241] font-medium">{formatPrice(marketStats?.high24h)}</span>
+            <span className="text-[#E15241] font-medium">{formatPrice(currentStats?.high24h)}</span>
           </div>
           <div className="flex flex-col items-end">
             <span className="text-xs text-[#6E7681]">저가</span>
-            <span className="text-[#2988D9] font-medium">{formatPrice(marketStats?.low24h)}</span>
+            <span className="text-[#2988D9] font-medium">{formatPrice(currentStats?.low24h)}</span>
           </div>
           <div className="flex flex-col items-end">
             <span className="text-xs text-[#6E7681]">거래량(24h)</span>
-            <span className="font-medium">{formatVolume(marketStats?.volume24h)} {symbol}</span>
+            <span className="font-medium">{formatVolume(currentStats?.volume24h)} {symbol}</span>
           </div>
         </div>
       </header>
       
-      {/* 메인 콘텐츠 - 업비트 스타일: 좁은 사이드바 + 넓은 차트 */}
+      {/* 메인 콘텐츠 */}
       <div className="flex-1 flex min-h-0">
-        {/* 좌측 사이드바 - 좁게 (280px) */}
-        <aside className="w-[280px] border-r border-[#30363D] bg-[#161B22] flex flex-col shrink-0">
-          {/* 시간간격 탭 */}
+        {/* 좌측 사이드바 - 시간간격 + 종목리스트 */}
+        <aside className="w-[240px] border-r border-[#30363D] bg-[#161B22] flex flex-col shrink-0">
+          {/* 시간간격 */}
           <div className="flex border-b border-[#30363D] overflow-x-auto scrollbar-hide">
             {TIMEFRAMES.map((tf) => (
               <button
@@ -145,12 +177,12 @@ export default function ChartPage() {
             <span className="w-14 text-right">등락률</span>
           </div>
           
-          {/* 종목 리스트 */}
+          {/* 종목 리스트 - 실시간 가격 */}
           <div className="flex-1 overflow-y-auto">
             {COINS.map((coin) => {
-              const stats = marketStats; // 간단화를 위해 현재 심볼만 표시
+              const stats = marketStats[coin.symbol];
               const isActive = symbol === coin.symbol;
-              const isUp = (marketStats?.change24hPct || 0) >= 0;
+              const isUp = (stats?.change24hPct || 0) >= 0;
               
               return (
                 <button
@@ -162,27 +194,30 @@ export default function ChartPage() {
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <div
-                      className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                      className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
                       style={{ backgroundColor: coin.color + '30', color: coin.color }}
                     >
                       {coin.symbol.slice(0, 1)}
                     </div>
                     <div className="min-w-0">
-                      <div className="text-sm font-bold">{coin.symbol}</div>
+                      <div className="text-xs font-bold">{coin.symbol}</div>
                       <div className="text-[10px] text-[#6E7681] truncate">{coin.nameKo}</div>
                     </div>
                   </div>
                   
                   <div className="w-20 text-right">
-                    <div className="text-sm font-medium">
-                      {isActive ? formatPrice(marketStats?.lastPrice) : '-'}
+                    <div className="text-xs font-medium">
+                      {stats?.lastPrice 
+                        ? `$${stats.lastPrice.toLocaleString('en-US', { minimumFractionDigits: stats.lastPrice < 10 ? 4 : 2, maximumFractionDigits: stats.lastPrice < 10 ? 4 : 2 })}`
+                        : '-'
+                      }
                     </div>
                   </div>
                   
                   <div className="w-14 text-right">
-                    {isActive && (
-                      <span className={`text-xs font-medium ${isUp ? 'text-[#E15241]' : 'text-[#2988D9]'}`}>
-                        {isUp ? '+' : ''}{marketStats?.change24hPct?.toFixed(2)}%
+                    {stats?.change24hPct !== undefined && (
+                      <span className={`text-[10px] font-medium ${isUp ? 'text-[#E15241]' : 'text-[#2988D9]'}`}>
+                        {isUp ? '+' : ''}{stats.change24hPct.toFixed(2)}%
                       </span>
                     )}
                   </div>
@@ -192,8 +227,8 @@ export default function ChartPage() {
           </div>
         </aside>
         
-        {/* 우측 차트 영역 - 넓게 */}
-        <main className="flex-1 flex flex-col min-w-0 bg-[#0D1117]">
+        {/* 중앙 차트 영역 - 70% */}
+        <main className="w-[70%] flex flex-col bg-[#0D1117]">
           {/* OHLC 인포바 */}
           {displayData && (
             <div className="h-10 bg-[#0D1117] border-b border-[#30363D] flex items-center px-4 gap-6 text-sm">
@@ -216,7 +251,7 @@ export default function ChartPage() {
             </div>
           )}
           
-          {/* 차트 - 화면 대부분 차지 */}
+          {/* 차트 */}
           <div className="flex-1 min-h-0 relative">
             {error ? (
               <div className="h-full flex items-center justify-center">
@@ -243,6 +278,59 @@ export default function ChartPage() {
             )}
           </div>
         </main>
+        
+        {/* 우측 실시간 가격 패널 - 30% */}
+        <aside className="flex-1 border-l border-[#30363D] bg-[#161B22] flex flex-col">
+          <div className="px-3 py-2 text-xs font-medium text-[#8B949E] border-b border-[#30363D]">
+            실시간 시세
+          </div>
+          
+          <div className="flex-1 overflow-y-auto">
+            {COINS.slice(0, 20).map((coin) => {
+              const stats = marketStats[coin.symbol];
+              const isUp = (stats?.change24hPct || 0) >= 0;
+              const isSelected = symbol === coin.symbol;
+              
+              return (
+                <button
+                  key={coin.symbol}
+                  onClick={() => setSymbol(coin.symbol)}
+                  className={`w-full flex items-center justify-between px-3 py-3 text-left border-b border-[#21262D] transition-colors ${
+                    isSelected ? 'bg-[#1C2128]' : 'hover:bg-[#21262D]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold"
+                      style={{ backgroundColor: coin.color + '30', color: coin.color }}
+                    >
+                      {coin.symbol.slice(0, 1)}
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold">{coin.symbol}</div>
+                      <div className="text-[10px] text-[#6E7681]">{coin.nameKo}</div>
+                    </div>
+                  </div>
+                  
+                  <div className="text-right">
+                    <div className="text-xs font-medium">
+                      {stats?.lastPrice 
+                        ? `$${stats.lastPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        : '-'
+                      }
+                    </div>
+                    <div className={`text-[10px] ${isUp ? 'text-[#E15241]' : 'text-[#2988D9]'}`}>
+                      {stats?.change24hPct !== undefined 
+                        ? `${isUp ? '+' : ''}${stats.change24hPct.toFixed(2)}%`
+                        : '-'
+                      }
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </aside>
       </div>
     </div>
   );
