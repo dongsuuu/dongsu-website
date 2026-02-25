@@ -88,7 +88,7 @@ export function ChartInstance({ pane }: ChartInstanceProps) {
   
   // B. 차트 생성
   useEffect(() => {
-    if (!isClient || !containerRef.current || bars.length === 0) return;
+    if (!isClient || !containerRef.current || !bars || bars.length === 0) return;
     
     let isMounted = true;
     
