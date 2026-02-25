@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useChartData, CandleData } from '@/hooks/useChartData';
 import { useLivePrices } from '@/hooks/useLivePrices';
 import { TradingChart } from './components/TradingChart';
+import { BotSimulator } from './components/BotSimulator';
 import { COINS } from '@/lib/constants/symbols';
 import { normalizeSymbol } from '@/lib/utils/chartUtils';
 
@@ -331,6 +332,11 @@ export default function ChartPage() {
             })}
           </div>
         </aside>
+      </div>
+      
+      {/* 봇 시뮬레이터 섹션 */}
+      <div className="border-t border-[#30363D] p-4">
+        <BotSimulator />
       </div>
     </div>
   );
