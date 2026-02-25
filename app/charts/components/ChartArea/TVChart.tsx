@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useChartStore } from '@/lib/store/chartStore';
 import { useInfiniteCandles } from '@/hooks/useInfiniteCandles';
 import { useChartSync } from '@/hooks/useChartSync';
-import { getCoinbaseProductId } from '@/lib/constants/symbols';
 
 interface TVChartProps {
   symbol: string;
@@ -24,12 +23,18 @@ export function TVChart({ symbol, isMain, onDataChange }: TVChartProps) {
   }>({});
   
   const [isChartReady, setIsChartReady] = useState(false);
+  const [isClient, setIsClient] = useState(false);
   
   const { 
     timeframe, 
     showMA, 
     showVolume,
   } = useChartStore();
+
+  // 클라이언트 확인
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const granularity = timeframeToSeconds(timeframe);
   
@@ -44,8 +49,10 @@ export function TVChart({ symbol, isMain, onDataChange }: TVChartProps) {
 
   // 초기 데이터 로드
   useEffect(() => {
-    loadInitial();
-  }, [symbol, timeframe, loadInitial]);
+    if (isClient) {
+      loadInitial();
+    }
+  }, [symbol, timeframe, loadInitial, isClient]);
 
   // 데이터 변경 시 부모 컴포넌트에 알림
   useEffect(() => {
