@@ -1,156 +1,202 @@
 'use client';
 
-import { useCallback } from 'react';
-import { useChartCoreStore } from '@/lib/store/chartCoreStore';
-import { resolveSymbol, resolutionToSeconds, logEvent, Bar } from '@/lib/utils/chartCore';
+import { useEffect, useRef, useReducer, useCallback } from 'react';
+import { normalizeSymbol, resolutionToSeconds, logEvent } from '@/lib/utils/chartUtils';
 
 const COINBASE_API = 'https://api.exchange.coinbase.com';
+const BATCH_SIZE = 300;
 
-// fetch with User-Agent (required by Coinbase)
-async function coinbaseFetch(url: string): Promise<Response> {
+export interface CandleData {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+interface ChartState {
+  data: CandleData[];
+  isLoading: boolean;
+  isLoadingMore: boolean;
+  error: string | null;
+  hasMore: boolean;
+}
+
+type ChartAction =
+  | { type: 'FETCH_START' }
+  | { type: 'FETCH_SUCCESS'; payload: CandleData[] }
+  | { type: 'FETCH_ERROR'; payload: string }
+  | { type: 'PREPEND_DATA'; payload: CandleData[] }
+  | { type: 'LOAD_MORE_START' }
+  | { type: 'LOAD_MORE_DONE' }
+  | { type: 'MARK_NO_MORE' }
+  | { type: 'RESET' };
+
+const initialState: ChartState = {
+  data: [],
+  isLoading: false,
+  isLoadingMore: false,
+  error: null,
+  hasMore: true,
+};
+
+function chartReducer(state: ChartState, action: ChartAction): ChartState {
+  switch (action.type) {
+    case 'FETCH_START':
+      return { ...state, isLoading: true, error: null };
+    case 'FETCH_SUCCESS':
+      return { ...state, isLoading: false, data: action.payload };
+    case 'FETCH_ERROR':
+      return { ...state, isLoading: false, error: action.payload };
+    case 'PREPEND_DATA':
+      const merged = [...action.payload, ...state.data];
+      const seen = new Set<number>();
+      const unique = merged.filter((d) => {
+        if (seen.has(d.time)) return false;
+        seen.add(d.time);
+        return true;
+      });
+      unique.sort((a, b) => a.time - b.time);
+      return { ...state, isLoadingMore: false, data: unique };
+    case 'LOAD_MORE_START':
+      return { ...state, isLoadingMore: true };
+    case 'LOAD_MORE_DONE':
+      return { ...state, isLoadingMore: false };
+    case 'MARK_NO_MORE':
+      return { ...state, hasMore: false, isLoadingMore: false };
+    case 'RESET':
+      return initialState;
+    default:
+      return state;
+  }
+}
+
+// Coinbase fetch with UA
+async function coinbaseFetch(url: string, signal?: AbortSignal): Promise<Response> {
   return fetch(url, {
-    headers: {
-      'User-Agent': 'dongsu-pro-chart/1.0',
-    },
+    headers: { 'User-Agent': 'dongsu-pro-chart/1.0' },
+    signal,
   });
 }
 
-export function useChartData() {
-  const {
-    setBars,
-    prependBars,
-    setLoading,
-    setError,
-    markNoMoreHistory,
-  } = useChartCoreStore();
+export function useChartData(symbol: string, resolution: string) {
+  const [state, dispatch] = useReducer(chartReducer, initialState);
+  const abortRef = useRef<AbortController | null>(null);
+  const loadingMoreRef = useRef(false);
 
-  // 초기 히스토리 로드
-  const loadHistory = useCallback(async (
-    uiSymbol: string,
-    resolution: string,
-    opts: { to?: number; limit?: number } = {}
-  ): Promise<Bar[]> => {
-    const symbol = resolveSymbol(uiSymbol);
-    const granularity = resolutionToSeconds(resolution);
-    const key = `${uiSymbol}:${resolution}`;
-    const limit = opts.limit || 300;
+  // 캔들 배치 로드
+  const loadBatch = useCallback(async (
+    sym: string,
+    res: string,
+    endSec: number,
+    count: number,
+    signal: AbortSignal
+  ): Promise<CandleData[]> => {
+    const gran = resolutionToSeconds(res);
+    const startSec = endSec - gran * count;
+    const productId = normalizeSymbol(sym);
     
-    logEvent('LOAD_HISTORY_START', { symbol, resolution, key });
+    const url = `${COINBASE_API}/products/${productId}/candles?` +
+      `start=${new Date(startSec * 1000).toISOString()}&` +
+      `end=${new Date(endSec * 1000).toISOString()}&` +
+      `granularity=${gran}`;
     
-    setLoading(key, true);
-    setError(key, null);
+    const res_ = await coinbaseFetch(url, signal);
+    if (!res_.ok) throw new Error(`HTTP ${res_.status}`);
+    
+    const candles = await res_.json();
+    return candles
+      .map((c: number[]) => ({
+        time: c[0],
+        low: c[1],
+        high: c[2],
+        open: c[3],
+        close: c[4],
+        volume: c[5],
+      }))
+      .sort((a: CandleData, b: CandleData) => a.time - b.time);
+  }, []);
+
+  // 초기 데이터 로드
+  useEffect(() => {
+    if (!symbol || !resolution) return;
+    
+    // 이전 요청 취소
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+    const { signal } = abortRef.current;
+    
+    dispatch({ type: 'FETCH_START' });
+    logEvent('CHART_FETCH_START', { symbol, resolution });
+    
+    const fetchData = async () => {
+      try {
+        const allData: CandleData[] = [];
+        let endSec = Math.floor(Date.now() / 1000);
+        let pages = 0;
+        const maxPages = 5; // 1500개 최대
+        
+        while (allData.length < 1200 && pages < maxPages) {
+          const batch = await loadBatch(symbol, resolution, endSec, BATCH_SIZE, signal);
+          if (batch.length === 0) break;
+          
+          allData.unshift(...batch);
+          endSec = batch[0].time - 1;
+          pages++;
+          
+          if (signal.aborted) return;
+        }
+        
+        // 중복 제거
+        const seen = new Set<number>();
+        const unique = allData.filter((d) => {
+          if (seen.has(d.time)) return false;
+          seen.add(d.time);
+          return true;
+        });
+        unique.sort((a, b) => a.time - b.time);
+        
+        dispatch({ type: 'FETCH_SUCCESS', payload: unique });
+        logEvent('CHART_FETCH_SUCCESS', { symbol, resolution, count: unique.length });
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+        dispatch({ type: 'FETCH_ERROR', payload: err.message });
+        logEvent('CHART_FETCH_ERROR', { symbol, resolution, error: err.message });
+      }
+    };
+    
+    fetchData();
+    
+    return () => abortRef.current?.abort();
+  }, [symbol, resolution, loadBatch]);
+
+  // 과거 데이터 추가 로드
+  const loadMore = useCallback(async (oldestTime: number) => {
+    if (loadingMoreRef.current || !state.hasMore) return;
+    loadingMoreRef.current = true;
+    dispatch({ type: 'LOAD_MORE_START' });
     
     try {
-      const to = opts.to || Math.floor(Date.now() / 1000);
-      const from = to - granularity * limit;
+      const abortController = new AbortController();
+      const batch = await loadBatch(symbol, resolution, oldestTime - 1, BATCH_SIZE, abortController.signal);
       
-      const url = `${COINBASE_API}/products/${symbol}/candles?start=${new Date(from * 1000).toISOString()}&end=${new Date(to * 1000).toISOString()}&granularity=${granularity}`;
-      
-      const res = await coinbaseFetch(url);
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      if (batch.length === 0) {
+        dispatch({ type: 'MARK_NO_MORE' });
+      } else {
+        dispatch({ type: 'PREPEND_DATA', payload: batch });
       }
-      
-      const candles = await res.json();
-      
-      // Coinbase candles: [time, low, high, open, close, volume]
-      const bars: Bar[] = candles
-        .map((c: number[]) => ({
-          time: c[0],
-          low: c[1],
-          high: c[2],
-          open: c[3],
-          close: c[4],
-          volume: c[5],
-        }))
-        .sort((a: Bar, b: Bar) => a.time - b.time);
-      
-      setBars(key, bars);
-      
-      logEvent('LOAD_HISTORY_SUCCESS', { 
-        symbol, 
-        resolution, 
-        count: bars.length,
-        firstTime: bars[0]?.time,
-        lastTime: bars[bars.length - 1]?.time,
-      });
-      
-      return bars;
-    } catch (error: any) {
-      logEvent('LOAD_HISTORY_ERROR', { symbol, resolution, error: error.message });
-      setError(key, error.message);
-      return [];
+    } catch (err: any) {
+      console.error('Load more error:', err);
     } finally {
-      setLoading(key, false);
+      loadingMoreRef.current = false;
+      dispatch({ type: 'LOAD_MORE_DONE' });
     }
-  }, [setBars, setLoading, setError]);
-
-  // 과거 데이터 추가 로드 (prepend)
-  const loadMoreHistory = useCallback(async (
-    uiSymbol: string,
-    resolution: string,
-    oldestTime: number
-  ): Promise<Bar[]> => {
-    const symbol = resolveSymbol(uiSymbol);
-    const granularity = resolutionToSeconds(resolution);
-    const key = `${uiSymbol}:${resolution}`;
-    const limit = 300;
-    
-    logEvent('LOAD_MORE_START', { symbol, resolution, oldestTime });
-    
-    setLoading(key, true);
-    
-    try {
-      const to = oldestTime - 1;
-      const from = to - granularity * limit;
-      
-      const url = `${COINBASE_API}/products/${symbol}/candles?start=${new Date(from * 1000).toISOString()}&end=${new Date(to * 1000).toISOString()}&granularity=${granularity}`;
-      
-      const res = await coinbaseFetch(url);
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-      }
-      
-      const candles = await res.json();
-      
-      if (candles.length === 0) {
-        markNoMoreHistory(uiSymbol, resolution);
-        logEvent('LOAD_MORE_NO_DATA', { symbol, resolution });
-        return [];
-      }
-      
-      const bars: Bar[] = candles
-        .map((c: number[]) => ({
-          time: c[0],
-          low: c[1],
-          high: c[2],
-          open: c[3],
-          close: c[4],
-          volume: c[5],
-        }))
-        .sort((a: Bar, b: Bar) => a.time - b.time);
-      
-      prependBars(key, bars);
-      
-      logEvent('LOAD_MORE_SUCCESS', { 
-        symbol, 
-        resolution, 
-        count: bars.length,
-        firstTime: bars[0]?.time,
-        lastTime: bars[bars.length - 1]?.time,
-      });
-      
-      return bars;
-    } catch (error: any) {
-      logEvent('LOAD_MORE_ERROR', { symbol, resolution, error: error.message });
-      return [];
-    } finally {
-      setLoading(key, false);
-    }
-  }, [prependBars, setLoading, markNoMoreHistory]);
+  }, [symbol, resolution, state.hasMore, loadBatch]);
 
   return {
-    loadHistory,
-    loadMoreHistory,
+    ...state,
+    loadMore,
+    refresh: () => dispatch({ type: 'RESET' }),
   };
 }
