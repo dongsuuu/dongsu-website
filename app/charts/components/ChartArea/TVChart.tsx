@@ -5,9 +5,11 @@ import { useChartCoreStore } from '@/lib/store/chartCoreStore';
 import { useChartData } from '@/hooks/useChartData';
 import { useChartWebSocket } from '@/hooks/useChartWebSocket';
 import { resolutionToSeconds, logEvent, Bar } from '@/lib/utils/chartCore';
+import { computeRSI, computeMACD, calculateMA } from '@/lib/utils/indicatorEngine';
+import { MarketHeader } from '../MarketHeader';
 
 interface TVChartProps {
-  chartId: string; // 'left' | 'right'
+  chartId: string;
   symbol: string;
   resolution: string;
 }
@@ -23,8 +25,19 @@ export function TVChart({ chartId, symbol, resolution }: TVChartProps) {
     ma60?: any;
   }>({});
   
+  // 지표 차트 refs
+  const indicatorContainerRef = useRef<HTMLDivElement>(null);
+  const rsiChartRef = useRef<any>(null);
+  const rsiSeriesRef = useRef<any>(null);
+  const macdChartRef = useRef<any>(null);
+  const macdSeriesRef = useRef<{ macd?: any; signal?: any; histogram?: any }>({});
+  
   const [isClient, setIsClient] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const [showRSI, setShowRSI] = useState(false);
+  const [showMACD, setShowMACD] = useState(false);
+  const [showMA, setShowMA] = useState(true);
+  const [ohlcInfo, setOhlcInfo] = useState<{ o: number; h: number; l: number; c: number; v: number; time: number } | null>(null);
   
   const {
     getBars,
@@ -43,18 +56,14 @@ export function TVChart({ chartId, symbol, resolution }: TVChartProps) {
     setIsClient(true);
   }, []);
   
-  // A. 초기 로드: 심볼/해상도 변경 시
+  // A. 초기 로드
   useEffect(() => {
     if (!isClient) return;
     
     logEvent('CHART_INIT', { chartId, symbol, resolution });
     
-    // 1. 기존 구독 해제
     unsubscribeBars(symbol, resolution);
-    
-    // 2. 데이터 로드
     loadHistory(symbol, resolution).then(() => {
-      // 3. 새 구독
       subscribeBars(symbol, resolution);
     });
     
@@ -63,7 +72,7 @@ export function TVChart({ chartId, symbol, resolution }: TVChartProps) {
     };
   }, [symbol, resolution, isClient]);
   
-  // B. 차트 인스턴스 생성/업데이트
+  // B. 차트 인스턴스 생성
   useEffect(() => {
     if (!isClient || !containerRef.current || bars.length === 0) return;
     
@@ -75,10 +84,9 @@ export function TVChart({ chartId, symbol, resolution }: TVChartProps) {
       if (chartRef.current) {
         chartRef.current.remove();
         chartRef.current = null;
-        seriesRefs.current = {};
       }
       
-      // 차트 생성
+      // 메인 차트
       const chart = createChart(containerRef.current!, {
         layout: {
           background: { type: ColorType.Solid, color: '#0D1117' },
@@ -125,7 +133,7 @@ export function TVChart({ chartId, symbol, resolution }: TVChartProps) {
         priceFormat: { type: 'volume' },
         priceScaleId: '',
       });
-      volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+      volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
       volumeSeries.setData(bars.map((b: Bar) => ({
         time: b.time as any,
         value: b.volume,
@@ -133,10 +141,38 @@ export function TVChart({ chartId, symbol, resolution }: TVChartProps) {
       })) as any);
       seriesRefs.current.volume = volumeSeries;
       
-      // 이동평균선
-      updateMA(bars);
+      // MA
+      if (showMA) updateMA(bars);
       
-      // D. 스크롤/줌 이벤트 - 과거 데이터 로드
+      // Crosshair 이벤트 - OHLC 인포라인
+      chart.subscribeCrosshairMove((param: any) => {
+        if (param.time) {
+          const bar = bars.find((b: Bar) => b.time === param.time);
+          if (bar) {
+            setOhlcInfo({
+              o: bar.open,
+              h: bar.high,
+              l: bar.low,
+              c: bar.close,
+              v: bar.volume,
+              time: bar.time,
+            });
+          }
+        } else if (bars.length > 0) {
+          // crosshair 벗어나면 마지막 캔들
+          const last = bars[bars.length - 1];
+          setOhlcInfo({
+            o: last.open,
+            h: last.high,
+            l: last.low,
+            c: last.close,
+            v: last.volume,
+            time: last.time,
+          });
+        }
+      });
+      
+      // 무한 스크롤 - 과거 데이터 로드
       chart.timeScale().subscribeVisibleLogicalRangeChange((range: any) => {
         if (range && range.from < 50 && hasMoreHistory(symbol, resolution)) {
           const oldestBar = bars[0];
@@ -146,7 +182,7 @@ export function TVChart({ chartId, symbol, resolution }: TVChartProps) {
         }
       });
       
-      // 활성 패널 설정 (클릭 시)
+      // 클릭 시 활성 패널 설정
       chart.subscribeClick(() => {
         setActivePane(chartId as 'left' | 'right');
       });
@@ -161,6 +197,19 @@ export function TVChart({ chartId, symbol, resolution }: TVChartProps) {
         }
       };
       window.addEventListener('resize', handleResize);
+      
+      // 초기 OHLC 설정
+      if (bars.length > 0) {
+        const last = bars[bars.length - 1];
+        setOhlcInfo({
+          o: last.open,
+          h: last.high,
+          l: last.low,
+          c: last.close,
+          v: last.volume,
+          time: last.time,
+        });
+      }
       
       setIsReady(true);
       
@@ -179,77 +228,71 @@ export function TVChart({ chartId, symbol, resolution }: TVChartProps) {
     };
   }, [bars.length > 0, isClient]);
   
-  // C. 데이터 업데이트 (실시간)
+  // C. 데이터 업데이트
   useEffect(() => {
     if (!chartRef.current || !isReady) return;
     
     const { candle, volume } = seriesRefs.current;
-    if (candle) {
-      candle.setData(bars);
-    }
+    if (candle) candle.setData(bars as any);
     if (volume) {
       volume.setData(bars.map((b: Bar) => ({
-        time: b.time,
+        time: b.time as any,
         value: b.volume,
         color: b.close >= b.open ? 'rgba(225, 82, 65, 0.5)' : 'rgba(41, 136, 217, 0.5)',
-      })));
+      })) as any);
     }
     
-    updateMA(bars);
-  }, [bars, isReady]);
+    if (showMA) updateMA(bars);
+    if (showRSI) updateRSI(bars);
+    if (showMACD) updateMACD(bars);
+  }, [bars, isReady, showMA, showRSI, showMACD]);
   
-  // MA 업데이트 함수
+  // MA 업데이트
   const updateMA = useCallback((data: Bar[]) => {
     if (!chartRef.current) return;
     
-    const calculateMA = (period: number) => {
-      const ma = [];
-      for (let i = period - 1; i < data.length; i++) {
-        let sum = 0;
-        for (let j = 0; j < period; j++) {
-          sum += data[i - j].close;
-        }
-        ma.push({ time: data[i].time, value: sum / period });
+    const closes = data.map((b) => b.close);
+    const times = data.map((b) => b.time);
+    
+    [7, 25, 60].forEach((period, idx) => {
+      const ma = calculateMA(closes, period);
+      const maData = ma.map((v, i) => ({
+        time: times[i + period - 1] as any,
+        value: v,
+      }));
+      
+      const key = period === 7 ? 'ma7' : period === 25 ? 'ma25' : 'ma60';
+      const color = period === 7 ? '#FFD700' : period === 25 ? '#FF6B6B' : '#4ECDC4';
+      
+      if (seriesRefs.current[key]) {
+        chartRef.current.removeSeries(seriesRefs.current[key]);
       }
-      return ma;
-    };
-    
-    // MA7
-    if (seriesRefs.current.ma7) {
-      chartRef.current.removeSeries(seriesRefs.current.ma7);
-    }
-    const ma7 = chartRef.current.addSeries((window as any).LightweightCharts?.LineSeries, {
-      color: '#FFD700',
-      lineWidth: 1,
-      title: 'MA7',
+      
+      seriesRefs.current[key] = chartRef.current.addSeries((window as any).LightweightCharts?.LineSeries, {
+        color,
+        lineWidth: 1,
+        title: `MA${period}`,
+      });
+      seriesRefs.current[key]?.setData(maData);
     });
-    ma7?.setData(calculateMA(7));
-    seriesRefs.current.ma7 = ma7;
-    
-    // MA25
-    if (seriesRefs.current.ma25) {
-      chartRef.current.removeSeries(seriesRefs.current.ma25);
-    }
-    const ma25 = chartRef.current.addSeries((window as any).LightweightCharts?.LineSeries, {
-      color: '#FF6B6B',
-      lineWidth: 1,
-      title: 'MA25',
-    });
-    ma25?.setData(calculateMA(25));
-    seriesRefs.current.ma25 = ma25;
-    
-    // MA60
-    if (seriesRefs.current.ma60) {
-      chartRef.current.removeSeries(seriesRefs.current.ma60);
-    }
-    const ma60 = chartRef.current.addSeries((window as any).LightweightCharts?.LineSeries, {
-      color: '#4ECDC4',
-      lineWidth: 1,
-      title: 'MA60',
-    });
-    ma60?.setData(calculateMA(60));
-    seriesRefs.current.ma60 = ma60;
   }, []);
+  
+  // RSI 업데이트
+  const updateRSI = useCallback((data: Bar[]) => {
+    // RSI 차트 구현 (별도 pane)
+    // TODO: RSI 차트 인스턴스 생성 및 데이터 설정
+  }, []);
+  
+  // MACD 업데이트
+  const updateMACD = useCallback((data: Bar[]) => {
+    // MACD 차트 구현 (별도 pane)
+    // TODO: MACD 차트 인스턴스 생성 및 데이터 설정
+  }, []);
+  
+  // 지표 토글
+  const toggleMA = () => setShowMA((v) => !v);
+  const toggleRSI = () => setShowRSI((v) => !v);
+  const toggleMACD = () => setShowMACD((v) => !v);
   
   if (!isClient) {
     return (
@@ -259,5 +302,51 @@ export function TVChart({ chartId, symbol, resolution }: TVChartProps) {
     );
   }
   
-  return <div ref={containerRef} className="h-full w-full" />;
+  return (
+    <div className="h-full flex flex-col">
+      {/* Market Header */}
+      <MarketHeader symbol={symbol} />
+      
+      {/* OHLC 인포라인 */}
+      {ohlcInfo && (
+        <div className="h-8 bg-[#0D1117] border-b border-[#30363D] flex items-center px-4 gap-6 text-xs">
+          <span className="text-[#6E7681]">O</span>
+          <span className="text-white">{ohlcInfo.o.toFixed(2)}</span>
+          <span className="text-[#6E7681]">H</span>
+          <span className="text-[#E15241]">{ohlcInfo.h.toFixed(2)}</span>
+          <span className="text-[#6E7681]">L</span>
+          <span className="text-[#2988D9]">{ohlcInfo.l.toFixed(2)}</span>
+          <span className="text-[#6E7681]">C</span>
+          <span className="text-white">{ohlcInfo.c.toFixed(2)}</span>
+          <span className="text-[#6E7681]">V</span>
+          <span className="text-white">{ohlcInfo.v.toFixed(4)}</span>
+        </div>
+      )}
+      
+      {/* 지표 토글 버튼 */}
+      <div className="h-8 bg-[#161B22] border-b border-[#30363D] flex items-center px-4 gap-2">
+        <button
+          onClick={toggleMA}
+          className={`px-2 py-0.5 rounded text-xs ${showMA ? 'bg-[#58A6FF] text-white' : 'text-[#8B949E] hover:text-white'}`}
+        >
+          MA
+        </button>
+        <button
+          onClick={toggleRSI}
+          className={`px-2 py-0.5 rounded text-xs ${showRSI ? 'bg-[#58A6FF] text-white' : 'text-[#8B949E] hover:text-white'}`}
+        >
+          RSI
+        </button>
+        <button
+          onClick={toggleMACD}
+          className={`px-2 py-0.5 rounded text-xs ${showMACD ? 'bg-[#58A6FF] text-white' : 'text-[#8B949E] hover:text-white'}`}
+        >
+          MACD
+        </button>
+      </div>
+      
+      {/* 메인 차트 */}
+      <div ref={containerRef} className="flex-1" />
+    </div>
+  );
 }
