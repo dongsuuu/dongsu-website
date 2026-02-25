@@ -6,6 +6,15 @@ import { resolveSymbol, resolutionToSeconds, logEvent, Bar } from '@/lib/utils/c
 
 const COINBASE_API = 'https://api.exchange.coinbase.com';
 
+// fetch with User-Agent (required by Coinbase)
+async function coinbaseFetch(url: string): Promise<Response> {
+  return fetch(url, {
+    headers: {
+      'User-Agent': 'dongsu-pro-chart/1.0',
+    },
+  });
+}
+
 export function useChartData() {
   const {
     setBars,
@@ -37,7 +46,7 @@ export function useChartData() {
       
       const url = `${COINBASE_API}/products/${symbol}/candles?start=${new Date(from * 1000).toISOString()}&end=${new Date(to * 1000).toISOString()}&granularity=${granularity}`;
       
-      const res = await fetch(url);
+      const res = await coinbaseFetch(url);
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
@@ -97,7 +106,7 @@ export function useChartData() {
       
       const url = `${COINBASE_API}/products/${symbol}/candles?start=${new Date(from * 1000).toISOString()}&end=${new Date(to * 1000).toISOString()}&granularity=${granularity}`;
       
-      const res = await fetch(url);
+      const res = await coinbaseFetch(url);
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }

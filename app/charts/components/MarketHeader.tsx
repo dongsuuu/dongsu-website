@@ -36,7 +36,11 @@ export function MarketHeader({ symbol }: MarketHeaderProps) {
     
     try {
       const productId = `${sym}-USD`;
-      const res = await fetch(`https://api.exchange.coinbase.com/products/${productId}/stats`);
+      const res = await fetch(`https://api.exchange.coinbase.com/products/${productId}/stats`, {
+        headers: {
+          'User-Agent': 'dongsu-pro-chart/1.0',
+        },
+      });
       
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
