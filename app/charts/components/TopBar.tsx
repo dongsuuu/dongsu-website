@@ -1,20 +1,95 @@
 'use client';
 
 import { useState } from 'react';
-import { useChartStore } from '@/lib/store/chartStore';
+import { useChartCoreStore } from '@/lib/store/chartCoreStore';
 import { searchCoins } from '@/lib/constants/symbols';
+import { logEvent } from '@/lib/utils/chartCore';
+
+const TIMEFRAMES = [
+  { value: '1m', label: '1분' },
+  { value: '5m', label: '5분' },
+  { value: '15m', label: '15분' },
+  { value: '30m', label: '30분' },
+  { value: '1h', label: '1시간' },
+  { value: '4h', label: '4시간' },
+  { value: '1d', label: '1일' },
+  { value: '1w', label: '1주' },
+];
 
 export function TopBar() {
-  const { selectedCoin, isDualMode, toggleDualMode, setSelectedCoin } = useChartStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchResults, setShowSearchResults] = useState(false);
   
+  const {
+    mode,
+    setMode,
+    activeSymbol,
+    activeResolution,
+    setActiveSymbol,
+    setActiveResolution,
+    leftSymbol,
+    leftResolution,
+    setLeftConfig,
+    setRightConfig,
+  } = useChartCoreStore();
+  
+  const currentSymbol = mode === 'single' ? leftSymbol : activeSymbol;
+  const currentResolution = mode === 'single' ? leftResolution : activeResolution;
+  
   const searchResults = searchQuery ? searchCoins(searchQuery) : [];
   
-  const handleSelectCoin = (coin: typeof selectedCoin) => {
-    setSelectedCoin(coin);
+  // A. 시간간격 변경
+  const handleTimeframeChange = (resolution: string) => {
+    logEvent('TIMEFRAME_CHANGE', { 
+      prevResolution: currentResolution, 
+      nextResolution: resolution,
+      activeSymbol: currentSymbol,
+    });
+    
+    if (mode === 'single') {
+      setLeftConfig(leftSymbol, resolution);
+    } else {
+      setActiveResolution(resolution);
+      // 활성 패널에 따라 설정
+      const { activePane } = useChartCoreStore.getState();
+      if (activePane === 'left') {
+        setLeftConfig(leftSymbol, resolution);
+      } else {
+        const { rightSymbol } = useChartCoreStore.getState();
+        setRightConfig(rightSymbol, resolution);
+      }
+    }
+  };
+  
+  // B. 심볼 변경
+  const handleSelectCoin = (coin: { symbol: string; name: string; nameKo?: string; color: string }) => {
+    logEvent('SYMBOL_CHANGE', { 
+      prevSymbol: currentSymbol, 
+      nextSymbol: coin.symbol,
+    });
+    
+    if (mode === 'single') {
+      setLeftConfig(coin.symbol, leftResolution);
+    } else {
+      setActiveSymbol(coin.symbol);
+      const { activePane } = useChartCoreStore.getState();
+      if (activePane === 'left') {
+        setLeftConfig(coin.symbol, leftResolution);
+      } else {
+        setRightConfig(coin.symbol, useChartCoreStore.getState().rightResolution);
+      }
+    }
+    
     setSearchQuery('');
     setShowSearchResults(false);
+  };
+  
+  // C. 모드 토글
+  const handleModeToggle = (newMode: 'single' | 'dual') => {
+    if (mode === newMode) return;
+    
+    logEvent('MODE_CHANGE', { prevMode: mode, nextMode: newMode });
+    setMode(newMode);
   };
   
   return (
@@ -69,33 +144,44 @@ export function TopBar() {
       
       {/* 현재 선택된 종목 */}
       <div className="flex items-center gap-2 px-3 py-1 bg-[#0D1117] rounded border border-[#30363D]">
-        <div
-          className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold"
-          style={{ backgroundColor: selectedCoin.color + '30', color: selectedCoin.color }}
-        >
-          {selectedCoin.symbol.slice(0, 2)}
-        </div>
-        <span className="font-medium">{selectedCoin.symbol}/USD</span>
+        <span className="font-medium">{currentSymbol}/USD</span>
       </div>
       
-      {/* 모드 토글 */}
+      {/* 시간간격 선택 */}
+      <div className="flex items-center gap-1">
+        {TIMEFRAMES.map((tf) => (
+          <button
+            key={tf.value}
+            onClick={() => handleTimeframeChange(tf.value)}
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+              currentResolution === tf.value
+                ? 'bg-[#58A6FF] text-white'
+                : 'text-[#8B949E] hover:text-white hover:bg-[#21262D]'
+            }`}
+          >
+            {tf.label}
+          </button>
+        ))}
+      </div>
+      
       <div className="flex-1" />
       
+      {/* 모드 토글 */}
       <div className="flex items-center gap-2">
         <span className="text-sm text-[#8B949E]">모드:</span>
         <div className="flex bg-[#0D1117] rounded p-0.5">
           <button
-            onClick={() => isDualMode && toggleDualMode()}
+            onClick={() => handleModeToggle('single')}
             className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-              !isDualMode ? 'bg-[#58A6FF] text-white' : 'text-[#8B949E] hover:text-white'
+              mode === 'single' ? 'bg-[#58A6FF] text-white' : 'text-[#8B949E] hover:text-white'
             }`}
           >
             Single
           </button>
           <button
-            onClick={() => !isDualMode && toggleDualMode()}
+            onClick={() => handleModeToggle('dual')}
             className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-              isDualMode ? 'bg-[#58A6FF] text-white' : 'text-[#8B949E] hover:text-white'
+              mode === 'dual' ? 'bg-[#58A6FF] text-white' : 'text-[#8B949E] hover:text-white'
             }`}
           >
             Dual
