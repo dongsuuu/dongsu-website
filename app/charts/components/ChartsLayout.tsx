@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useChartStore } from '@/lib/store/chartStore';
 import { useCoinbaseWebSocket } from '@/hooks/useCoinbaseWebSocket';
 import { MarketPanel } from './MarketPanel';
@@ -11,26 +11,29 @@ export function ChartsLayout() {
   const [isMounted, setIsMounted] = useState(false);
   const { selectedCoin, isDualMode, secondCoin, favorites } = useChartStore();
   
-  // 마운트 확인 (SSR hydration 방지)
+  // 마운트 확인
   useEffect(() => {
     setIsMounted(true);
   }, []);
   
-  // WebSocket 연결할 심볼 목록
-  const wsSymbols = [selectedCoin.symbol];
-  if (isDualMode && secondCoin) {
-    wsSymbols.push(secondCoin.symbol);
-  }
-  favorites.forEach((fav) => {
-    if (!wsSymbols.includes(fav)) {
-      wsSymbols.push(fav);
+  // WebSocket 연결할 심볼 목록 - useMemo로 안정화
+  const wsSymbols = useMemo(() => {
+    const symbols = [selectedCoin.symbol];
+    if (isDualMode && secondCoin) {
+      symbols.push(secondCoin.symbol);
     }
-  });
+    favorites.forEach((fav) => {
+      if (!symbols.includes(fav)) {
+        symbols.push(fav);
+      }
+    });
+    return symbols;
+  }, [selectedCoin.symbol, isDualMode, secondCoin, favorites]);
   
   // WebSocket 연결 (마운트 후에만)
   useCoinbaseWebSocket(isMounted ? wsSymbols : []);
   
-  // 마운트 전에는 로딩 표시
+  // 마운트 전 로딩
   if (!isMounted) {
     return (
       <div className="h-screen flex items-center justify-center bg-[#0D1117] text-[#E6EDF3]">
@@ -44,15 +47,9 @@ export function ChartsLayout() {
   
   return (
     <div className="h-screen flex flex-col bg-[#0D1117] text-[#E6EDF3]">
-      {/* 상단 바 */}
       <TopBar />
-      
-      {/* 메인 콘텐츠 */}
       <div className="flex-1 flex overflow-hidden">
-        {/* 좌측: 종목 리스트 */}
         <MarketPanel />
-        
-        {/* 우측: 차트 영역 */}
         <ChartArea />
       </div>
     </div>
