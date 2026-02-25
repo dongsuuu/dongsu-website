@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useChartData, CandleData } from '@/hooks/useChartData';
 import { TradingChart } from './components/TradingChart';
 import { COINS } from '@/lib/constants/symbols';
@@ -73,17 +73,17 @@ export default function ChartPage() {
   return (
     <div className="h-screen flex flex-col bg-[#0D1117] text-[#E6EDF3]">
       {/* 헤더 */}
-      <header className="h-12 bg-[#161B22] border-b border-[#30363D] flex items-center px-4 gap-4">
-        <div className="flex items-center gap-2">
-          <span className="text-lg font-bold">{symbol}</span>
-          <span className="text-xs text-[#6E7681]">/USD</span>
+      <header className="h-10 bg-[#161B22] border-b border-[#30363D] flex items-center px-3 gap-3 shrink-0">
+        <div className="flex items-center gap-1.5">
+          <span className="text-base font-bold">{symbol}</span>
+          <span className="text-[10px] text-[#6E7681]">/USD</span>
         </div>
         
-        <div className="flex items-baseline gap-2">
-          <span className={`text-xl font-bold ${isUp ? 'text-[#E15241]' : 'text-[#2988D9]'}`}>
+        <div className="flex items-baseline gap-1.5">
+          <span className={`text-lg font-bold ${isUp ? 'text-[#E15241]' : 'text-[#2988D9]'}`}>
             {formatPrice(marketStats?.lastPrice)}
           </span>
-          <span className={`text-sm ${isUp ? 'text-[#E15241]' : 'text-[#2988D9]'}`}>
+          <span className={`text-xs ${isUp ? 'text-[#E15241]' : 'text-[#2988D9]'}`}>
             {(marketStats?.change24hPct ?? 0) >= 0 ? '+' : ''}
             {marketStats?.change24hPct?.toFixed(2) ?? '-'}%
           </span>
@@ -91,7 +91,7 @@ export default function ChartPage() {
         
         <div className="flex-1" />
         
-        <div className="flex items-center gap-4 text-sm">
+        <div className="flex items-center gap-3 text-xs">
           <span><span className="text-[#6E7681]">고</span> {' '}
             <span className="text-[#E15241]">{formatPrice(marketStats?.high24h)}</span>
           </span>
@@ -101,17 +101,17 @@ export default function ChartPage() {
         </div>
       </header>
       
-      {/* 메인 */}
-      <div className="flex-1 flex min-h-0">
+      {/* 메인 - 50vh로 제한하여 한눈에 보기 */}
+      <div className="flex h-[50vh]">
         {/* 사이드바 */}
-        <aside className="w-60 border-r border-[#30363D] bg-[#161B22] flex flex-col">
+        <aside className="w-52 border-r border-[#30363D] bg-[#161B22] flex flex-col overflow-hidden">
           {/* 시간간격 */}
           <div className="flex border-b border-[#30363D]">
             {TIMEFRAMES.map((tf) => (
               <button
                 key={tf.value}
                 onClick={() => setResolution(tf.value)}
-                className={`flex-1 py-2 text-xs ${
+                className={`flex-1 py-1.5 text-[10px] ${
                   resolution === tf.value
                     ? 'text-[#58A6FF] border-b-2 border-[#58A6FF]'
                     : 'text-[#8B949E] hover:text-white'
@@ -128,19 +128,19 @@ export default function ChartPage() {
               <button
                 key={coin.symbol}
                 onClick={() => setSymbol(coin.symbol)}
-                className={`w-full flex items-center px-3 py-2 text-left hover:bg-[#21262D] ${
+                className={`w-full flex items-center px-2 py-1.5 text-left hover:bg-[#21262D] ${
                   symbol === coin.symbol ? 'bg-[#1C2128]' : ''
                 }`}
               >
                 <div
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mr-2"
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold mr-1.5"
                   style={{ backgroundColor: coin.color + '30', color: coin.color }}
                 >
                   {coin.symbol[0]}
                 </div>
-                <div className="flex-1">
-                  <div className="text-sm font-medium">{coin.symbol}</div>
-                  <div className="text-xs text-[#6E7681]">{coin.nameKo}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-medium truncate">{coin.symbol}</div>
+                  <div className="text-[10px] text-[#6E7681] truncate">{coin.nameKo}</div>
                 </div>
               </button>
             ))}
@@ -151,7 +151,7 @@ export default function ChartPage() {
         <main className="flex-1 flex flex-col min-w-0">
           {/* OHLC 인포라인 */}
           {displayData && (
-            <div className="h-8 bg-[#0D1117] border-b border-[#30363D] flex items-center px-4 gap-4 text-xs">
+            <div className="h-6 bg-[#0D1117] border-b border-[#30363D] flex items-center px-3 gap-3 text-[10px] shrink-0">
               {[
                 { l: 'O', v: displayData.open },
                 { l: 'H', v: displayData.high },
@@ -159,7 +159,7 @@ export default function ChartPage() {
                 { l: 'C', v: displayData.close },
                 { l: 'V', v: displayData.volume },
               ].map((item) => (
-                <span key={item.l} className="flex items-center gap-1">
+                <span key={item.l} className="flex items-center gap-0.5">
                   <span className="text-[#6E7681]">{item.l}</span>
                   <span className="text-white">
                     {item.v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -174,10 +174,10 @@ export default function ChartPage() {
             {error ? (
               <div className="h-full flex items-center justify-center">
                 <div className="text-center">
-                  <p className="text-red-400 mb-2">{error}</p>
+                  <p className="text-red-400 text-sm mb-2">{error}</p>
                   <button
                     onClick={() => window.location.reload()}
-                    className="px-4 py-2 bg-[#58A6FF] text-white rounded"
+                    className="px-3 py-1.5 bg-[#58A6FF] text-white rounded text-sm"
                   >
                     새로고침
                   </button>
@@ -197,6 +197,9 @@ export default function ChartPage() {
           </div>
         </main>
       </div>
+      
+      {/* 하단 여백 */}
+      <div className="flex-1 bg-[#0D1117]"></div>
     </div>
   );
 }
