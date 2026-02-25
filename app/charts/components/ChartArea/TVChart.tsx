@@ -47,6 +47,13 @@ export function TVChart({ symbol, isMain, onDataChange }: TVChartProps) {
     loadInitial();
   }, [symbol, timeframe, loadInitial]);
 
+  // 데이터 변경 시 부모 컴포넌트에 알림
+  useEffect(() => {
+    if (data.length > 0 && onDataChange) {
+      onDataChange(data);
+    }
+  }, [data, onDataChange]);
+
   // 차트 초기화
   useEffect(() => {
     if (!containerRef.current || data.length === 0) return;
