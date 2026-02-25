@@ -1,20 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useChartCoreStore } from '@/lib/store/chartCoreStore';
-import { TVChart } from './ChartArea/TVChart';
-import { TopBar } from './TopBar';
-import { MarketPanel } from './MarketPanel';
+import { useUnifiedChartStore } from '@/lib/store/unifiedChartStore';
+import { ChartInstance } from './ChartArea/ChartInstance';
+import { UnifiedMarketPanel } from './UnifiedMarketPanel';
 
 export function ChartsLayout() {
   const [isMounted, setIsMounted] = useState(false);
-  const { 
-    mode, 
-    leftSymbol, 
-    leftResolution, 
-    rightSymbol, 
-    rightResolution 
-  } = useChartCoreStore();
+  const { mode, activePane, setActivePane } = useUnifiedChartStore();
   
   useEffect(() => {
     setIsMounted(true);
@@ -24,46 +17,31 @@ export function ChartsLayout() {
     return (
       <div className="h-screen flex items-center justify-center bg-[#0D1117] text-[#E6EDF3]">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#58A6FF] mx-auto mb-4"></div>
-          <p>차트 로딩 중...</p>
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#58A6FF] mx-auto mb-3"></div>
+          <p className="text-sm">차트 로딩 중...</p>
         </div>
       </div>
     );
   }
   
   return (
-    <div className="h-screen flex flex-col bg-[#0D1117] text-[#E6EDF3]">
-      <TopBar />
-      
-      <div className="flex-1 flex overflow-hidden">
+    <div className="h-screen flex flex-col bg-[#0D1117] text-[#E6EDF3] overflow-hidden">
+      {/* 메인 레이아웃 */}
+      <div className="flex-1 flex min-h-0">
         {/* 좌측: 종목 리스트 */}
-        <MarketPanel />
+        <UnifiedMarketPanel />
         
         {/* 우측: 차트 영역 */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col min-w-0">
           {mode === 'single' ? (
-            // Single 모드
-            <TVChart 
-              chartId="left"
-              symbol={leftSymbol}
-              resolution={leftResolution}
-            />
+            <ChartInstance pane="left" />
           ) : (
-            // Dual 모드
             <>
               <div className="h-1/2 border-b border-[#30363D]">
-                <TVChart 
-                  chartId="left"
-                  symbol={leftSymbol}
-                  resolution={leftResolution}
-                />
+                <ChartInstance pane="left" />
               </div>
               <div className="h-1/2">
-                <TVChart 
-                  chartId="right"
-                  symbol={rightSymbol}
-                  resolution={rightResolution}
-                />
+                <ChartInstance pane="right" />
               </div>
             </>
           )}
