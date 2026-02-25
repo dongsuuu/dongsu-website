@@ -101,8 +101,8 @@ export default function ChartPage() {
         </div>
       </header>
       
-      {/* 메인 - 50vh로 제한하여 한눈에 보기 */}
-      <div className="flex h-[50vh]">
+      {/* 메인 - 50vh로 제한, 가로도 축소 */}
+      <div className="flex h-[50vh] max-w-5xl">
         {/* 사이드바 */}
         <aside className="w-52 border-r border-[#30363D] bg-[#161B22] flex flex-col overflow-hidden">
           {/* 시간간격 */}
