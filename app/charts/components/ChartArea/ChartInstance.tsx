@@ -24,23 +24,34 @@ export function ChartInstance({ pane }: ChartInstanceProps) {
   const store = useUnifiedChartStore();
   const { loadInitialHistory, loadMoreHistory } = useUnifiedChartData();
   
-  const { symbol, resolution, bars, isLoading, hasMore, isLoadingMore } = store[pane];
-  const stats = store.marketStats[symbol];
+  // 안전하게 상태 접근
+  const paneState = store[pane] || {
+    symbol: 'BTC',
+    resolution: '1h',
+    bars: [],
+    isLoading: false,
+    hasMore: true,
+    isLoadingMore: false,
+    error: null,
+  };
+  
+  const { symbol, resolution, bars, isLoading, hasMore, isLoadingMore } = paneState;
+  const stats = store.marketStats?.[symbol];
   
   useEffect(() => { setIsClient(true); }, []);
   
-  // A. 초기 로드: 캔들 + 24h stats
+  // A. 초기 로드
   useEffect(() => {
     if (!isClient) return;
     logEvent('CHART_MOUNT', { pane, symbol, resolution });
     
-    // 캔들 로드
-    loadInitialHistory(pane, symbol, resolution, 1200);
+    try {
+      loadInitialHistory(pane, symbol, resolution, 1200);
+      fetch24hStats(symbol);
+    } catch (err: any) {
+      console.error('Chart init error:', err);
+    }
     
-    // 24h stats 로드
-    fetch24hStats(symbol);
-    
-    // 30초마다 stats 갱신
     const interval = setInterval(() => fetch24hStats(symbol), 30000);
     return () => clearInterval(interval);
   }, [symbol, resolution, isClient, pane]);
@@ -70,10 +81,8 @@ export function ChartInstance({ pane }: ChartInstanceProps) {
         volume24h: parseFloat(data.volume),
         lastUpdate: Date.now(),
       });
-      
-      logEvent('STATS_LOADED', { symbol: sym, lastPrice });
     } catch (err: any) {
-      logEvent('STATS_ERROR', { symbol: sym, error: err.message });
+      console.error('Stats fetch error:', err.message);
     }
   };
   
@@ -81,104 +90,117 @@ export function ChartInstance({ pane }: ChartInstanceProps) {
   useEffect(() => {
     if (!isClient || !containerRef.current || bars.length === 0) return;
     
+    let isMounted = true;
+    
     const init = async () => {
-      const { createChart, CandlestickSeries, HistogramSeries, ColorType } = 
-        await import('lightweight-charts');
-      
-      if (chartRef.current) chartRef.current.remove();
-      
-      const chart = createChart(containerRef.current!, {
-        layout: {
-          background: { type: ColorType.Solid, color: '#0D1117' },
-          textColor: '#8B949E',
-          fontSize: 10,
-        },
-        grid: {
-          vertLines: { color: 'rgba(48, 54, 61, 0.3)' },
-          horzLines: { color: 'rgba(48, 54, 61, 0.3)' },
-        },
-        rightPriceScale: { borderColor: '#30363D', scaleMargins: { top: 0.05, bottom: 0.15 } },
-        timeScale: {
-          borderColor: '#30363D',
-          timeVisible: ['1m', '5m', '15m', '30m', '1h', '4h'].includes(resolution),
-          barSpacing: 5,
-        },
-        crosshair: {
-          mode: 1,
-          vertLine: { color: '#58A6FF', labelBackgroundColor: '#58A6FF', width: 1 },
-          horzLine: { color: '#58A6FF', labelBackgroundColor: '#58A6FF', width: 1 },
-        },
-        handleScroll: { vertTouchDrag: false },
-        width: containerRef.current!.clientWidth,
-        height: containerRef.current!.clientHeight,
-      });
-      
-      chartRef.current = chart;
-      
-      // 캔들
-      const candle = chart.addSeries(CandlestickSeries, {
-        upColor: '#E15241', downColor: '#2988D9',
-        borderUpColor: '#E15241', borderDownColor: '#2988D9',
-        wickUpColor: '#E15241', wickDownColor: '#2988D9',
-      });
-      candle.setData(bars as any);
-      seriesRefs.current.candle = candle;
-      
-      // 거래량
-      const volume = chart.addSeries(HistogramSeries, {
-        priceFormat: { type: 'volume' },
-        priceScaleId: '',
-      });
-      volume.priceScale().applyOptions({ scaleMargins: { top: 0.9, bottom: 0 } });
-      volume.setData(bars.map((b) => ({
-        time: b.time as any,
-        value: b.volume,
-        color: b.close >= b.open ? 'rgba(225, 82, 65, 0.5)' : 'rgba(41, 136, 217, 0.5)',
-      })) as any);
-      seriesRefs.current.volume = volume;
-      
-      // MA
-      if (showMA) updateMA(bars);
-      
-      // Crosshair → OHLC
-      chart.subscribeCrosshairMove((param: any) => {
-        if (param.time && param.point) {
-          const bar = bars.find((b) => b.time === param.time);
-          if (bar) setOhlcInfo(bar);
-        } else if (bars.length > 0) {
-          setOhlcInfo(bars[bars.length - 1]);
+      try {
+        const { createChart, CandlestickSeries, HistogramSeries, ColorType } = 
+          await import('lightweight-charts');
+        
+        if (!isMounted) return;
+        if (chartRef.current) chartRef.current.remove();
+        
+        const chart = createChart(containerRef.current!, {
+          layout: {
+            background: { type: ColorType.Solid, color: '#0D1117' },
+            textColor: '#8B949E',
+            fontSize: 10,
+          },
+          grid: {
+            vertLines: { color: 'rgba(48, 54, 61, 0.3)' },
+            horzLines: { color: 'rgba(48, 54, 61, 0.3)' },
+          },
+          rightPriceScale: { borderColor: '#30363D', scaleMargins: { top: 0.05, bottom: 0.15 } },
+          timeScale: {
+            borderColor: '#30363D',
+            timeVisible: ['1m', '5m', '15m', '30m', '1h', '4h'].includes(resolution),
+            barSpacing: 5,
+          },
+          crosshair: {
+            mode: 1,
+            vertLine: { color: '#58A6FF', labelBackgroundColor: '#58A6FF', width: 1 },
+            horzLine: { color: '#58A6FF', labelBackgroundColor: '#58A6FF', width: 1 },
+          },
+          handleScroll: { vertTouchDrag: false },
+          width: containerRef.current!.clientWidth,
+          height: containerRef.current!.clientHeight,
+        });
+        
+        chartRef.current = chart;
+        
+        // 캔들
+        const candle = chart.addSeries(CandlestickSeries, {
+          upColor: '#E15241', downColor: '#2988D9',
+          borderUpColor: '#E15241', borderDownColor: '#2988D9',
+          wickUpColor: '#E15241', wickDownColor: '#2988D9',
+        });
+        candle.setData(bars as any);
+        seriesRefs.current.candle = candle;
+        
+        // 거래량
+        const volume = chart.addSeries(HistogramSeries, {
+          priceFormat: { type: 'volume' },
+          priceScaleId: '',
+        });
+        volume.priceScale().applyOptions({ scaleMargins: { top: 0.9, bottom: 0 } });
+        volume.setData(bars.map((b) => ({
+          time: b.time as any,
+          value: b.volume,
+          color: b.close >= b.open ? 'rgba(225, 82, 65, 0.5)' : 'rgba(41, 136, 217, 0.5)',
+        })) as any);
+        seriesRefs.current.volume = volume;
+        
+        // MA
+        if (showMA && bars.length >= 60) {
+          updateMA(bars);
         }
-      });
-      
-      // 클릭 → 활성 패널
-      chart.subscribeClick(() => store.setActivePane(pane));
-      
-      // 무한 스크롤
-      chart.timeScale().subscribeVisibleLogicalRangeChange((range: any) => {
-        if (range && range.from < 30 && hasMore && !isLoadingMore && bars.length > 0) {
-          loadMoreHistory(pane, symbol, resolution, bars[0].time);
-        }
-      });
-      
-      // 리사이즈
-      const onResize = () => {
-        if (containerRef.current && chartRef.current) {
-          chartRef.current.applyOptions({
-            width: containerRef.current.clientWidth,
-            height: containerRef.current.clientHeight,
-          });
-        }
-      };
-      window.addEventListener('resize', onResize);
-      
-      setOhlcInfo(bars[bars.length - 1]);
-      
-      return () => window.removeEventListener('resize', onResize);
+        
+        // Crosshair
+        chart.subscribeCrosshairMove((param: any) => {
+          if (!isMounted) return;
+          if (param.time && param.point) {
+            const bar = bars.find((b) => b.time === param.time);
+            if (bar) setOhlcInfo(bar);
+          } else if (bars.length > 0) {
+            setOhlcInfo(bars[bars.length - 1]);
+          }
+        });
+        
+        // 클릭
+        chart.subscribeClick(() => store.setActivePane(pane));
+        
+        // 무한 스크롤
+        chart.timeScale().subscribeVisibleLogicalRangeChange((range: any) => {
+          if (range && range.from < 30 && hasMore && !isLoadingMore && bars.length > 0) {
+            loadMoreHistory(pane, symbol, resolution, bars[0].time);
+          }
+        });
+        
+        // 리사이즈
+        const onResize = () => {
+          if (containerRef.current && chartRef.current) {
+            chartRef.current.applyOptions({
+              width: containerRef.current.clientWidth,
+              height: containerRef.current.clientHeight,
+            });
+          }
+        };
+        window.addEventListener('resize', onResize);
+        
+        setOhlcInfo(bars[bars.length - 1]);
+        
+        return () => {
+          window.removeEventListener('resize', onResize);
+        };
+      } catch (err: any) {
+        console.error('Chart init error:', err);
+      }
     };
     
     init();
     
     return () => {
+      isMounted = false;
       if (chartRef.current) { chartRef.current.remove(); chartRef.current = null; }
     };
   }, [bars.length, isClient, pane]);
@@ -186,48 +208,56 @@ export function ChartInstance({ pane }: ChartInstanceProps) {
   // C. 데이터 업데이트
   useEffect(() => {
     if (!chartRef.current) return;
-    const { candle, volume } = seriesRefs.current;
-    if (candle) candle.setData(bars as any);
-    if (volume) {
-      volume.setData(bars.map((b) => ({
-        time: b.time as any,
-        value: b.volume,
-        color: b.close >= b.open ? 'rgba(225, 82, 65, 0.5)' : 'rgba(41, 136, 217, 0.5)',
-      })) as any);
+    try {
+      const { candle, volume } = seriesRefs.current;
+      if (candle) candle.setData(bars as any);
+      if (volume) {
+        volume.setData(bars.map((b) => ({
+          time: b.time as any,
+          value: b.volume,
+          color: b.close >= b.open ? 'rgba(225, 82, 65, 0.5)' : 'rgba(41, 136, 217, 0.5)',
+        })) as any);
+      }
+      if (showMA && bars.length >= 60) updateMA(bars);
+    } catch (err: any) {
+      console.error('Chart update error:', err);
     }
-    if (showMA) updateMA(bars);
   }, [bars, showMA]);
   
   // D. MA 업데이트
   const updateMA = useCallback(async (data: any[]) => {
     if (!chartRef.current || data.length < 60) return;
-    const { LineSeries } = await import('lightweight-charts');
-    const closes = data.map((b) => b.close);
-    const times = data.map((b) => b.time);
-    
-    [7, 25, 60].forEach((p, i) => {
-      const ma = calculateMA(closes, p);
-      const maData = ma.map((v, j) => ({ time: times[j + p - 1] as any, value: v }));
-      const key = `ma${p}`;
-      const color = ['#FFD700', '#FF6B6B', '#4ECDC4'][i];
+    try {
+      const { LineSeries } = await import('lightweight-charts');
+      const closes = data.map((b) => b.close);
+      const times = data.map((b) => b.time);
       
-      if (seriesRefs.current[key]) chartRef.current.removeSeries(seriesRefs.current[key]);
-      seriesRefs.current[key] = chartRef.current.addSeries(LineSeries, { color, lineWidth: 1 });
-      seriesRefs.current[key]?.setData(maData);
-    });
+      [7, 25, 60].forEach((p, i) => {
+        const ma = calculateMA(closes, p);
+        const maData = ma.map((v, j) => ({ time: times[j + p - 1] as any, value: v }));
+        const key = `ma${p}`;
+        const color = ['#FFD700', '#FF6B6B', '#4ECDC4'][i];
+        
+        if (seriesRefs.current[key]) chartRef.current.removeSeries(seriesRefs.current[key]);
+        seriesRefs.current[key] = chartRef.current.addSeries(LineSeries, { color, lineWidth: 1 });
+        seriesRefs.current[key]?.setData(maData);
+      });
+    } catch (err: any) {
+      console.error('MA update error:', err);
+    }
   }, []);
   
   // 포맷
   const formatPrice = (p?: number) => {
-    if (p === undefined || p === null) return '-';
+    if (p === undefined || p === null || isNaN(p)) return '-';
     return `$${p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
   const formatPct = (p?: number) => {
-    if (p === undefined || p === null) return '-';
+    if (p === undefined || p === null || isNaN(p)) return '-';
     return `${p >= 0 ? '+' : ''}${p.toFixed(2)}%`;
   };
   const formatVolume = (v?: number) => {
-    if (v === undefined || v === null) return '-';
+    if (v === undefined || v === null || isNaN(v)) return '-';
     if (v > 1000000) return `${(v / 1000000).toFixed(2)}M`;
     if (v > 1000) return `${(v / 1000).toFixed(2)}K`;
     return v.toFixed(0);
@@ -238,7 +268,7 @@ export function ChartInstance({ pane }: ChartInstanceProps) {
   const isUp = (stats?.change24hPct || 0) >= 0;
   
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col relative">
       {/* 헤더 - 48px */}
       <div className="h-12 bg-[#161B22] border-b border-[#30363D] flex items-center px-3 gap-3 shrink-0">
         <div className="flex items-center gap-1">
@@ -277,8 +307,8 @@ export function ChartInstance({ pane }: ChartInstanceProps) {
             <span key={item.l} className="flex items-center gap-0.5">
               <span className="text-[#6E7681]">{item.l}</span>
               <span className={item.c}>
-                {item.isVol 
-                  ? item.v.toFixed(2) 
+                {item.isVol || typeof item.v !== 'number' || isNaN(item.v)
+                  ? (item.v || 0).toFixed(2)
                   : item.v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </span>
@@ -318,10 +348,10 @@ export function ChartInstance({ pane }: ChartInstanceProps) {
         </div>
       )}
       
-      {store[pane].error && (
+      {paneState.error && (
         <div className="absolute inset-0 bg-[#0D1117]/90 flex items-center justify-center z-10">
           <div className="text-center px-4">
-            <p className="text-red-400 text-xs mb-2">{store[pane].error}</p>
+            <p className="text-red-400 text-xs mb-2">{paneState.error}</p>
             <button
               onClick={() => loadInitialHistory(pane, symbol, resolution)}
               className="px-3 py-1 bg-[#58A6FF] text-white rounded text-xs"
